@@ -64,20 +64,13 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 			 struct fuse_file_info *fi)
 {
 	(void) fi;
-	int res = 0;
+	int res;
 
-	memset(stbuf, 0, sizeof(struct stat));
-	if (strcmp(path, "/") == 0) {
-		stbuf->st_mode = S_IFDIR | 0755;
-		stbuf->st_nlink = 2;
-	} else if (strcmp(path+1, options.filename) == 0) {
-		stbuf->st_mode = S_IFREG | 0444;
-		stbuf->st_nlink = 1;
-		stbuf->st_size = strlen(options.contents);
-	} else
-		res = -ENOENT;
+	res = lstat(path, stbuf);
+	if (res == -1)
+		return -errno;
 
-	return res;
+	return 0;
 }
 
 static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
