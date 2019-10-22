@@ -196,11 +196,11 @@ int main(int argc, char *argv[])
 	   additional help (by adding `--help` to the options again)
 	   without usage: line (by setting argv[0] to the empty
 	   string) */
-	if (options.show_help) {
-		show_help(argv[0]);
-		assert(fuse_opt_add_arg(&args, "--help") == 0);
-		args.argv[0][0] = '\0';
-	}
+	// if (options.show_help) {
+	// 	show_help(argv[0]);
+	// 	assert(fuse_opt_add_arg(&args, "--help") == 0);
+	// 	args.argv[0][0] = '\0';
+	// }
 
 	ret = fuse_main(args.argc, args.argv, &hello_oper, NULL);
 	fuse_opt_free_args(&args);
