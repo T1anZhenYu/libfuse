@@ -56,21 +56,21 @@
  * fuse_opt_parse would attempt to free() them when the user specifies
  * different values on the command line.
  */
-static struct options {
-	const char *filename;
-	const char *contents;
-	int show_help;
-} options;
+// static struct options {
+// 	const char *filename;
+// 	const char *contents;
+// 	int show_help;
+// } options;
 
-#define OPTION(t, p)                           \
-    { t, offsetof(struct options, p), 1 }
-static const struct fuse_opt option_spec[] = {
-	OPTION("--name=%s", filename),
-	OPTION("--contents=%s", contents),
-	OPTION("-h", show_help),
-	OPTION("--help", show_help),
-	FUSE_OPT_END
-};
+// #define OPTION(t, p)                           \
+//     { t, offsetof(struct options, p), 1 }
+// static const struct fuse_opt option_spec[] = {
+// 	OPTION("--name=%s", filename),
+// 	OPTION("--contents=%s", contents),
+// 	OPTION("-h", show_help),
+// 	OPTION("--help", show_help),
+// 	FUSE_OPT_END
+// };
 
 static void *hello_init(struct fuse_conn_info *conn,
 			struct fuse_config *cfg)
@@ -184,12 +184,12 @@ int main(int argc, char *argv[])
 	/* Set defaults -- we have to use strdup so that
 	   fuse_opt_parse can free the defaults if other
 	   values are specified */
-	options.filename = strdup("hello");
-	options.contents = strdup("Hello World!\n");
+	// options.filename = strdup("hello");
+	// options.contents = strdup("Hello World!\n");
 
 	/* Parse options */
-	if (fuse_opt_parse(&args, &options, option_spec, NULL) == -1)
-		return 1;
+	// if (fuse_opt_parse(&args, &options, option_spec, NULL) == -1)
+	// 	return 1;
 
 	/* When --help is specified, first print our own file-system
 	   specific help text, then signal fuse_main to show
