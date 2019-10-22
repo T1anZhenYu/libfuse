@@ -47,7 +47,7 @@
 #include <sys/time.h>
 #ifdef HAVE_SETXATTR
 #include <sys/xattr.h>
-#include<iostream>
+
 #endif
 
 /*
@@ -86,7 +86,7 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 {
 	(void) fi;
 	int res;
-	std::cout<<"path is "<<path<<std::endl;
+	printf("path is %s",path);
 	res = lstat(path, stbuf);
 	if (res == -1)
 		return -errno;
