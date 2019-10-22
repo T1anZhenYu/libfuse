@@ -21,13 +21,33 @@
 
 #define FUSE_USE_VERSION 31
 
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
+#define _GNU_SOURCE
+
+#ifdef linux
+/* For pread()/pwrite()/utimensat() */
+#define _XOPEN_SOURCE 700
+#endif
+
 #include <fuse.h>
 #include <stdio.h>
 #include <string.h>
-#include <errno.h>
+#include <unistd.h>
 #include <fcntl.h>
-#include <stddef.h>
-#include <assert.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <errno.h>
+#ifdef __FreeBSD__
+#include <sys/socket.h>
+#include <sys/un.h>
+#endif
+#include <sys/time.h>
+#ifdef HAVE_SETXATTR
+#include <sys/xattr.h>
+#endif
 
 /*
  * Command line options
@@ -77,48 +97,64 @@ static int hello_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi,
 			 enum fuse_readdir_flags flags)
 {
+	DIR *dp;
+	struct dirent *de;
+
 	(void) offset;
 	(void) fi;
 	(void) flags;
 
-	if (strcmp(path, "/") != 0)
-		return -ENOENT;
+	dp = opendir(path);
+	if (dp == NULL)
+		return -errno;
 
-	filler(buf, ".", NULL, 0, 0);
-	filler(buf, "..", NULL, 0, 0);
-	filler(buf, options.filename, NULL, 0, 0);
+	while ((de = readdir(dp)) != NULL) {
+		struct stat st;
+		memset(&st, 0, sizeof(st));
+		st.st_ino = de->d_ino;
+		st.st_mode = de->d_type << 12;
+		if (filler(buf, de->d_name, &st, 0, 0))
+			break;
+	}
 
+	closedir(dp);
 	return 0;
 }
 
+
 static int hello_open(const char *path, struct fuse_file_info *fi)
 {
-	if (strcmp(path+1, options.filename) != 0)
-		return -ENOENT;
+	int res;
 
-	if ((fi->flags & O_ACCMODE) != O_RDONLY)
-		return -EACCES;
+	res = open(path, fi->flags);
+	if (res == -1)
+		return -errno;
 
+	fi->fh = res;
 	return 0;
 }
 
 static int hello_read(const char *path, char *buf, size_t size, off_t offset,
 		      struct fuse_file_info *fi)
 {
-	size_t len;
-	(void) fi;
-	if(strcmp(path+1, options.filename) != 0)
-		return -ENOENT;
+	int fd;
+	int res;
 
-	len = strlen(options.contents);
-	if (offset < len) {
-		if (offset + size > len)
-			size = len - offset;
-		memcpy(buf, options.contents + offset, size);
-	} else
-		size = 0;
+	if(fi == NULL)
+		fd = open(path, O_RDONLY);
+	else
+		fd = fi->fh;
+	
+	if (fd == -1)
+		return -errno;
 
-	return size;
+	res = pread(fd, buf, size, offset);
+	if (res == -1)
+		res = -errno;
+
+	if(fi == NULL)
+		close(fd);
+	return res;
 }
 
 static struct fuse_operations hello_oper = {
