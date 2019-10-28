@@ -72,7 +72,11 @@
 // 	OPTION("--help", show_help),
 // 	FUSE_OPT_END
 // };
-
+void change_base_path(char*path){
+	if (path[0] == '/' && strlen(path) == 1){
+		char* new_path = "/home/tian/tian/"
+	}
+}
 static void *hello_init(struct fuse_conn_info *conn,
 			struct fuse_config *cfg)
 {
@@ -86,7 +90,7 @@ static int hello_getattr(const char *path, struct stat *stbuf,
 {
 	(void) fi;
 	int res;
-	printf("path is %s",path);
+
 	res = lstat(path, stbuf);
 	if (res == -1)
 		return -errno;
