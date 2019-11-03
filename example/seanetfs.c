@@ -205,6 +205,7 @@ struct sshfs_file {
 	int connver;
 	int modifver;
 	int refs;
+	char* root_manifest_eid;	
 };
 
 struct sshfs {
