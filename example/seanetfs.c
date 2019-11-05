@@ -206,6 +206,15 @@ struct sshfs_file {
 	int modifver;
 	int refs;
 	char* root_manifest_eid;	
+	uint32_t flags;
+	uint64_t size = 0;
+	uint32_t uid = 0;
+	uint32_t gid = 0;
+	uint32_t atime = 0;
+	uint32_t mtime = 0;
+	uint32_t mode = S_IFREG | 0777;
+	uint32_t inode;
+	uint32_t dev;
 };
 
 struct sshfs {
@@ -767,79 +776,22 @@ static inline int buf_get_string(struct buffer *buf, char **str)
 }
 //这个函数可以大体看出如何根据远程信息修改本地inode。
 //为什么没有inode号
-static int buf_get_attrs(struct buffer *buf, struct stat *stbuf, int *flagsp)
+static int buf_get_attrs(struct sshfs_file *sf, struct stat *stbuf, int *flagsp)
 {
-	//这个函数里面的取值操作感觉非常危险，直接按字节读取，太容易出错了；而且每次读取都要
-	//修改buffer->len的大小，如果读取顺序发生变化，会导致读取出错。
-	uint32_t flags;
-	uint64_t size = 0;
-	uint32_t uid = 0;
-	uint32_t gid = 0;
-	uint32_t atime = 0;
-	uint32_t mtime = 0;
-	uint32_t mode = S_IFREG | 0777;
-
-	if (buf_get_uint32(buf, &flags) == -1)
-		return -EIO;
-	if (flagsp)//不清楚这个参数的含义
-		*flagsp = flags;
-	if ((flags & SSH_FILEXFER_ATTR_SIZE) &&
-	    buf_get_uint64(buf, &size) == -1)
-		return -EIO;
-	if ((flags & SSH_FILEXFER_ATTR_UIDGID) &&
-	    (buf_get_uint32(buf, &uid) == -1 ||
-	     buf_get_uint32(buf, &gid) == -1))
-		return -EIO;
-	if ((flags & SSH_FILEXFER_ATTR_PERMISSIONS) &&
-	    buf_get_uint32(buf, &mode) == -1)
-		return -EIO;
-	if ((flags & SSH_FILEXFER_ATTR_ACMODTIME)) {
-		if (buf_get_uint32(buf, &atime) == -1 ||
-		    buf_get_uint32(buf, &mtime) == -1)
-			return -EIO;
-	}
-	if ((flags & SSH_FILEXFER_ATTR_EXTENDED)) {
-		uint32_t extcount;
-		unsigned i;
-		if (buf_get_uint32(buf, &extcount) == -1)
-			return -EIO;
-		for (i = 0; i < extcount; i++) {
-			struct buffer tmp;
-			if (buf_get_data(buf, &tmp) == -1)
-				return -EIO;
-			buf_free(&tmp);
-			if (buf_get_data(buf, &tmp) == -1)
-				return -EIO;
-			buf_free(&tmp);
-		}
-	}
-
-	if (sshfs.remote_uid_detected) {
-		if (uid == sshfs.remote_uid)
-			uid = sshfs.local_uid;
-		if (gid == sshfs.remote_gid)
-			gid = sshfs.local_gid;
-	}
-	if (sshfs.idmap == IDMAP_FILE && sshfs.uid_map)
-		if (translate_id(&uid, sshfs.uid_map) == -1)
-			return -EPERM;
-	if (sshfs.idmap == IDMAP_FILE && sshfs.gid_map)
-		if (translate_id(&gid, sshfs.gid_map) == -1)
-			return -EPERM;
 
 	memset(stbuf, 0, sizeof(struct stat));
-	stbuf->st_mode = mode;
+	stbuf->st_mode = sf->mode;
 	stbuf->st_nlink = 1;
-	stbuf->st_size = size;
+	stbuf->st_size = sf->size;
 	if (sshfs.blksize) {
 		stbuf->st_blksize = sshfs.blksize;
 		stbuf->st_blocks = ((size + sshfs.blksize - 1) &
 			~((unsigned long long) sshfs.blksize - 1)) >> 9;
 	}
-	stbuf->st_uid = uid;
-	stbuf->st_gid = gid;
-	stbuf->st_atime = atime;
-	stbuf->st_ctime = stbuf->st_mtime = mtime;
+	stbuf->st_uid = sf->uid;
+	stbuf->st_gid = sf->gid;
+	stbuf->st_atime = sf->atime;
+	stbuf->st_ctime = stbuf->st_mtime = sf->mtime;
 	return 0;
 }
 //从buffer里面获取文件系统的信息
@@ -2033,7 +1985,7 @@ static int sshfs_access(const char *path, int mask)
 	struct stat stbuf;
 	int err = 0;
 
-	if (mask & X_OK) {
+	if (mask ) {
 		err = sshfs.op->getattr(path, &stbuf, NULL);
 		if (!err) {
 			if (S_ISREG(stbuf.st_mode) &&
@@ -2261,7 +2213,6 @@ static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	int err;
 	struct buffer buf;
-	struct buffer *handle;
 
 	handle = malloc(sizeof(struct buffer));
 	if(handle == NULL)
@@ -2269,13 +2220,22 @@ static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
 
 	buf_init(&buf, 0);
 	buf_add_path(&buf, path);
-	err = sftp_request(SSH_FXP_OPENDIR, &buf, SSH_FXP_HANDLE, handle);
-	if (!err) {
-		buf_finish(handle);
-		fi->fh = (unsigned long) handle;
-	} else
-		free(handle);
+
+	// err = sftp_request(SSH_FXP_OPENDIR, &buf, SSH_FXP_HANDLE, handle);
+	// if (!err) {
+	// 	buf_finish(handle);
+	// 	fi->fh = (unsigned long) handle;
+	// } else
+	// 	free(handle);
+	char* real_path;
+	buf_get_string(&buf,&real_path);
+	res = open(real_path,fi->flags);
+	if (res == -1)
+		return -errno;
+
+	fi->fh = res;
 	buf_free(&buf);
+	free(real_path)
 	return err;
 }
 
@@ -3276,13 +3236,10 @@ static int sshfs_getattr(const char *path, struct stat *stbuf,
 {
 	int err;
 	struct buffer buf;
-	struct buffer outbuf;
 	struct sshfs_file *sf = NULL;
 
 	if (fi != NULL && !sshfs.fstat_workaround) {
 		sf = get_sshfs_file(fi);
-		// if (!sshfs_file_is_conn(sf)) 不需要验证是否链接
-		// 	return -EIO;
 	}
 	
 	char* inode_eid;
@@ -3290,21 +3247,16 @@ static int sshfs_getattr(const char *path, struct stat *stbuf,
 	if(sf == NULL) {
 		buf_add_path(&buf, path);
 		if(change_path_to_eid(buf,&inode_eid)){
-			Seanetfs_getinode(inode_eid,sf)
+			if(Seanetfs_getinode(inode_eid,(char *)sf) == 0){
+				return -EIO
+			}
 		}
-		// err = sftp_request(sshfs.follow_symlinks ? SSH_FXP_STAT : SSH_FXP_LSTAT,
-		// 		   &buf, SSH_FXP_ATTRS, &outbuf);
 	}
-	else {
-		buf_add_buf(&buf, &sf->handle);
-		err = sftp_request(SSH_FXP_FSTAT, &buf, SSH_FXP_ATTRS, &outbuf);
-	}		
 	if (!err) {
-		err = buf_get_attrs(&outbuf, stbuf, NULL);
+		err = buf_get_attrs(&sf, stbuf, NULL);
 #ifdef __APPLE__
 		stbuf->st_blksize = 0;
 #endif
-		buf_free(&outbuf);
 	}
 	buf_free(&buf);
 	return err;
