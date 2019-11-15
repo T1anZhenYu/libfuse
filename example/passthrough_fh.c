@@ -72,6 +72,13 @@ static void *xmp_init(struct fuse_conn_info *conn,
 	return NULL;
 }
 
+// stat() stats the file pointed to by path and fills in buf.
+
+// lstat() is identical to stat(), except that if path is a 
+// symbolic link, then the link itself is stat-ed, not the file that it refers to.
+
+// fstat() is identical to stat(), except that the file to be stat-ed 
+// is specified by the file descriptor fd.
 static int xmp_getattr(const char *path, struct stat *stbuf,
 			struct fuse_file_info *fi)
 {
@@ -104,7 +111,8 @@ static int xmp_readlink(const char *path, char *buf, size_t size)
 {
 	int res;
 
-	res = readlink(path, buf, size - 1);
+	res = readlink(path, buf, size - 1);//这个不是很清楚，是读的软连接文件
+	//的内容，还是软连接指向的文件的内容。
 	if (res == -1)
 		return -errno;
 
@@ -134,7 +142,7 @@ static int xmp_opendir(const char *path, struct fuse_file_info *fi)
 	d->offset = 0;
 	d->entry = NULL;
 
-	fi->fh = (unsigned long) d;
+	fi->fh = (unsigned long) d;//为什么用d做fh？
 	return 0;
 }
 
@@ -150,8 +158,8 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	struct xmp_dirp *d = get_dirp(fi);
 
 	(void) path;
-	if (offset != d->offset) {
-#ifndef __FreeBSD__
+	if (offset != d->offset) {//为什么会出现这种情况
+#ifndef __FreeBSD__//FreeBSD是一种类UNIX操作系统，
 		seekdir(d->dp, offset);
 #else
 		/* Subtract the one that we add when calling
