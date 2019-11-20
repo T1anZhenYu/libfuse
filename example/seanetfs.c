@@ -158,7 +158,7 @@ typedef void (*request_func)(struct request *);
 
 struct request {
 	unsigned int want_reply;
-	sem_t ready;//è¿™ä¸ªæ˜¯ä¿¡å·é‡å˜é‡ï¼Œç¬¬ä¸€æ¬¡è§ï¼Œç”¨æ¥å¤šè¿›ç¨‹åŒæ­¥
+	sem_t ready;//Õâ¸öÊÇĞÅºÅÁ¿±äÁ¿£¬µÚÒ»´Î¼û£¬ÓÃÀ´¶à½ø³ÌÍ¬²½
 	uint8_t reply_type;
 	uint32_t id;
 	int replied;
@@ -193,7 +193,7 @@ struct read_chunk {
 	struct list_head reqs;
 	struct sshfs_io sio;
 };
-//å®é™…ä¸Šå°±æ˜¯inode
+//Êµ¼ÊÉÏ¾ÍÊÇinode
 struct sshfs_file {
 	struct buffer handle;
 	struct list_head write_reqs;
@@ -205,17 +205,17 @@ struct sshfs_file {
 	int connver;
 	int modifver;
 	int refs;
-	char* root_manifest_eid;//rootmanifesteidå¾ˆé‡è¦	
+	char* root_manifest_eid;//rootmanifesteidºÜÖØÒª	
 	uint32_t flags;
-	uint64_t size = 0;//è¿™ä¸ªè¡¨ç¤ºinodeä¸‹é¢æœ‰å¤šå°‘ä¸ªé€»è¾‘å•å…ƒï¼ˆæ–‡ä»¶/æ–‡ä»¶å¤¹çš„ä¸ªæ•°ï¼Œæˆ–è€…æ˜¯
-	//æ–‡ä»¶æ‹†åˆ†çš„chunkçš„ä¸ªæ•°
-	uint64_t bit_size = 0;//è¡¨ç¤ºæ–‡ä»¶å­—èŠ‚å¤§å°
-	uint32_t uid = 0;//æ‹¥æœ‰è€…id
-	uint32_t gid = 0;//æ‹¥æœ‰è€…æ‰€åœ¨gruop id
-	uint32_t atime = 0;//æ–‡ä»¶ä¸Šæ¬¡æ‰“å¼€æ—¶é—´
-	uint32_t mtime = 0;//æ–‡ä»¶ä¸Šæ¬¡å˜åŠ¨æ—¶é—´
-	uint32_t ctime = 0;//inode ä¸Šæ¬¡å˜åŠ¨æ—¶é—´
-	uint32_t mode = S_IFREG | 0777;//inodeç±»å‹ï¼ˆè¡¨ç¤ºæ˜¯æ–‡ä»¶è¿˜æ˜¯æ–‡ä»¶å¤¹ï¼‰
+	uint64_t size = 0;//Õâ¸ö±íÊ¾inodeÏÂÃæÓĞ¶àÉÙ¸öÂß¼­µ¥Ôª£¨ÎÄ¼ş/ÎÄ¼ş¼ĞµÄ¸öÊı£¬»òÕßÊÇ
+	//ÎÄ¼ş²ğ·ÖµÄchunkµÄ¸öÊı
+	uint64_t bit_size = 0;//±íÊ¾ÎÄ¼ş×Ö½Ú´óĞ¡
+	uint32_t uid = 0;//ÓµÓĞÕßid
+	uint32_t gid = 0;//ÓµÓĞÕßËùÔÚgruop id
+	uint32_t atime = 0;//ÎÄ¼şÉÏ´Î´ò¿ªÊ±¼ä
+	uint32_t mtime = 0;//ÎÄ¼şÉÏ´Î±ä¶¯Ê±¼ä
+	uint32_t ctime = 0;//inode ÉÏ´Î±ä¶¯Ê±¼ä
+	uint32_t mode = S_IFREG | 0777;//inodeÀàĞÍ£¨±íÊ¾ÊÇÎÄ¼ş»¹ÊÇÎÄ¼ş¼Ğ£©
 	uint32_t dev;//
 };
 
@@ -767,7 +767,7 @@ static inline int buf_get_data(struct buffer *buf, struct buffer *data)
 }
 
 static inline int buf_get_string(struct buffer *buf, char **str) 
-//ä¸ºä»€ä¹ˆç”¨äºŒçº§æŒ‡é’ˆï¼Ÿ
+//ÎªÊ²Ã´ÓÃ¶ş¼¶Ö¸Õë£¿
 {
 	struct buffer data;
 	if (buf_get_data(buf, &data) == -1)
@@ -776,8 +776,8 @@ static inline int buf_get_string(struct buffer *buf, char **str)
 	*str = (char *) data.p;
 	return 0;
 }
-//è¿™ä¸ªå‡½æ•°å¯ä»¥å¤§ä½“çœ‹å‡ºå¦‚ä½•æ ¹æ®è¿œç¨‹ä¿¡æ¯ä¿®æ”¹æœ¬åœ°inodeã€‚
-//ä¸ºä»€ä¹ˆæ²¡æœ‰inodeå·
+//Õâ¸öº¯Êı¿ÉÒÔ´óÌå¿´³öÈçºÎ¸ù¾İÔ¶³ÌĞÅÏ¢ĞŞ¸Ä±¾µØinode¡£
+//ÎªÊ²Ã´Ã»ÓĞinodeºÅ
 static int buf_get_attrs(struct sshfs_file *sf, struct stat *stbuf, int *flagsp)
 {
 
@@ -796,20 +796,20 @@ static int buf_get_attrs(struct sshfs_file *sf, struct stat *stbuf, int *flagsp)
 	stbuf->st_ctime = stbuf->st_mtime = sf->mtime;
 	return 0;
 }
-//ä»bufferé‡Œé¢è·å–æ–‡ä»¶ç³»ç»Ÿçš„ä¿¡æ¯
+//´ÓbufferÀïÃæ»ñÈ¡ÎÄ¼şÏµÍ³µÄĞÅÏ¢
 static int buf_get_statvfs(struct buffer *buf, struct statvfs *stbuf)
 {
 // 	struct statfs 
 // { 
-//    long    f_type;     /* æ–‡ä»¶ç³»ç»Ÿç±»å‹  */ 
-//    long    f_bsize;    /* ç»è¿‡ä¼˜åŒ–çš„ä¼ è¾“å—å¤§å°  */ 
-//    long    f_blocks;   /* æ–‡ä»¶ç³»ç»Ÿæ•°æ®å—æ€»æ•° */ 
-//    long    f_bfree;    /* å¯ç”¨å—æ•° */ 
-//    long    f_bavail;   /* éè¶…çº§ç”¨æˆ·å¯è·å–çš„å—æ•° */ 
-//    long    f_files;    /* æ–‡ä»¶ç»“ç‚¹æ€»æ•° */ 
-//    long    f_ffree;    /* å¯ç”¨æ–‡ä»¶ç»“ç‚¹æ•° */ 
-//    fsid_t  f_fsid;     /* æ–‡ä»¶ç³»ç»Ÿæ ‡è¯† */ 
-//    long    f_namelen;  /* æ–‡ä»¶åçš„æœ€å¤§é•¿åº¦ */ 
+//    long    f_type;     /* ÎÄ¼şÏµÍ³ÀàĞÍ  */ 
+//    long    f_bsize;    /* ¾­¹ıÓÅ»¯µÄ´«Êä¿é´óĞ¡  */ 
+//    long    f_blocks;   /* ÎÄ¼şÏµÍ³Êı¾İ¿é×ÜÊı */ 
+//    long    f_bfree;    /* ¿ÉÓÃ¿éÊı */ 
+//    long    f_bavail;   /* ·Ç³¬¼¶ÓÃ»§¿É»ñÈ¡µÄ¿éÊı */ 
+//    long    f_files;    /* ÎÄ¼ş½áµã×ÜÊı */ 
+//    long    f_ffree;    /* ¿ÉÓÃÎÄ¼ş½áµãÊı */ 
+//    fsid_t  f_fsid;     /* ÎÄ¼şÏµÍ³±êÊ¶ */ 
+//    long    f_namelen;  /* ÎÄ¼şÃûµÄ×î´ó³¤¶È */ 
 // }; 
 // ***************************************************************
 	uint64_t bsize;
@@ -889,7 +889,7 @@ static int buf_get_entries(struct buffer *buf, void *dbuf,
 		if (buf_get_string(buf, &name) == -1)
 			return -EIO;
 		if (buf_get_string(buf, &longname) != -1) {
-			free(longname);//ä¸ºä»€ä¹ˆè¦ç«‹åˆ»freeæ‰ï¼Ÿ
+			free(longname);//ÎªÊ²Ã´ÒªÁ¢¿Ìfreeµô£¿
 			err = buf_get_attrs(buf, &stbuf, NULL);
 			if (!err) {
 				if (sshfs.follow_symlinks &&
@@ -911,15 +911,15 @@ static void ssh_add_arg(const char *arg)
 	if (fuse_opt_add_arg(&sshfs.ssh_args, arg) == -1)
 		_exit(1);
 }
-// ç›¸å…³å‡½æ•°ï¼šreaddir, write, fcntl, close, lseek, readlink, fread
+// Ïà¹Øº¯Êı£ºreaddir, write, fcntl, close, lseek, readlink, fread
 
-// å¤´æ–‡ä»¶ï¼š#include <unistd.h>
+// Í·ÎÄ¼ş£º#include <unistd.h>
 
-// å®šä¹‰å‡½æ•°ï¼šssize_t read(int fd, void * buf, size_t count);
+// ¶¨Òåº¯Êı£ºssize_t read(int fd, void * buf, size_t count);
 
-// å‡½æ•°è¯´æ˜ï¼šread()ä¼šæŠŠå‚æ•°fd æ‰€æŒ‡çš„æ–‡ä»¶ä¼ é€count ä¸ªå­—èŠ‚åˆ°buf æŒ‡é’ˆæ‰€æŒ‡çš„å†…å­˜ä¸­. 
-// è‹¥å‚æ•°count ä¸º0, åˆ™read()ä¸ä¼šæœ‰ä½œç”¨å¹¶è¿”å›0. è¿”å›å€¼ä¸ºå®é™…è¯»å–åˆ°çš„å­—èŠ‚æ•°,
-//  å¦‚æœè¿”å›0, è¡¨ç¤ºå·²åˆ°è¾¾æ–‡ä»¶å°¾æˆ–æ˜¯æ— å¯è¯»å–çš„æ•°æ®,æ­¤å¤–æ–‡ä»¶è¯»å†™ä½ç½®ä¼šéšè¯»å–åˆ°çš„å­—èŠ‚ç§»åŠ¨.
+// º¯ÊıËµÃ÷£ºread()»á°Ñ²ÎÊıfd ËùÖ¸µÄÎÄ¼ş´«ËÍcount ¸ö×Ö½Úµ½buf Ö¸ÕëËùÖ¸µÄÄÚ´æÖĞ. 
+// Èô²ÎÊıcount Îª0, Ôòread()²»»áÓĞ×÷ÓÃ²¢·µ»Ø0. ·µ»ØÖµÎªÊµ¼Ê¶ÁÈ¡µ½µÄ×Ö½ÚÊı,
+//  Èç¹û·µ»Ø0, ±íÊ¾ÒÑµ½´ïÎÄ¼şÎ²»òÊÇÎŞ¿É¶ÁÈ¡µÄÊı¾İ,´ËÍâÎÄ¼ş¶ÁĞ´Î»ÖÃ»áËæ¶ÁÈ¡µ½µÄ×Ö½ÚÒÆ¶¯.
 
 static int pty_expect_loop(void)
 {
@@ -1015,9 +1015,9 @@ static void replace_arg(char **argp, const char *newarg)
 {
 	free(*argp);
 	*argp = strdup(newarg);
-// 	åŠŸ èƒ½: å°†ä¸²æ‹·è´åˆ°æ–°å»ºçš„ä½ç½®å¤„
-// strdup()åœ¨å†…éƒ¨è°ƒç”¨äº†malloc()ä¸ºå˜é‡åˆ†é…å†…å­˜ï¼Œä¸éœ€è¦ä½¿ç”¨è¿”å›çš„å­—ç¬¦ä¸²æ—¶ï¼Œ
-// éœ€è¦ç”¨free()é‡Šæ”¾ç›¸åº”çš„å†…å­˜ç©ºé—´ï¼Œå¦åˆ™ä¼šé€ æˆå†…å­˜æ³„æ¼ã€‚
+// 	¹¦ ÄÜ: ½«´®¿½±´µ½ĞÂ½¨µÄÎ»ÖÃ´¦
+// strdup()ÔÚÄÚ²¿µ÷ÓÃÁËmalloc()Îª±äÁ¿·ÖÅäÄÚ´æ£¬²»ĞèÒªÊ¹ÓÃ·µ»ØµÄ×Ö·û´®Ê±£¬
+// ĞèÒªÓÃfree()ÊÍ·ÅÏàÓ¦µÄÄÚ´æ¿Õ¼ä£¬·ñÔò»áÔì³ÉÄÚ´æĞ¹Â©¡£
 	if (*argp == NULL) {
 		fprintf(stderr, "sshfs: memory allocation failed\n");
 		abort();
@@ -1050,8 +1050,8 @@ static int start_ssh(void)
 
 	pid = fork();
 // 	pid_t fork( void);
-// ï¼ˆpid_t æ˜¯ä¸€ä¸ªå®å®šä¹‰ï¼Œå…¶å®è´¨æ˜¯int è¢«å®šä¹‰åœ¨#include<sys/types.h>ä¸­ï¼‰
-// è¿”å›å€¼ï¼š è‹¥æˆåŠŸè°ƒç”¨ä¸€æ¬¡åˆ™è¿”å›ä¸¤ä¸ªå€¼ï¼Œå­è¿›ç¨‹è¿”å›0ï¼Œçˆ¶è¿›ç¨‹è¿”å›å­è¿›ç¨‹IDï¼›å¦åˆ™ï¼Œå‡ºé”™è¿”å›-1
+// £¨pid_t ÊÇÒ»¸öºê¶¨Òå£¬ÆäÊµÖÊÊÇint ±»¶¨ÒåÔÚ#include<sys/types.h>ÖĞ£©
+// ·µ»ØÖµ£º Èô³É¹¦µ÷ÓÃÒ»´ÎÔò·µ»ØÁ½¸öÖµ£¬×Ó½ø³Ì·µ»Ø0£¬¸¸½ø³Ì·µ»Ø×Ó½ø³ÌID£»·ñÔò£¬³ö´í·µ»Ø-1
 	if (pid == -1) {
 		perror("failed to fork");
 		close(sockpair[1]);
@@ -1081,7 +1081,7 @@ static int start_ssh(void)
 		default:
 			_exit(0);
 		}
-		chdir("/");//æ›´æ¢å½“å‰å·¥ä½œç›®å½•
+		chdir("/");//¸ü»»µ±Ç°¹¤×÷Ä¿Â¼
 
 		if (sshfs.password_stdin) {
 			int sfd;
@@ -1167,10 +1167,10 @@ static int connect_to(char *host, char *port)
 }
 
 // struct iovec {
-// 	 /* Starting address (å†…å­˜èµ·å§‹åœ°å€ï¼‰*/
+// 	 /* Starting address (ÄÚ´æÆğÊ¼µØÖ·£©*/
 //    void  *iov_base;   
    
-//     /* Number of bytes to transferï¼ˆè¿™å—å†…å­˜é•¿åº¦ï¼‰ */
+//     /* Number of bytes to transfer£¨Õâ¿éÄÚ´æ³¤¶È£© */
 //    size_t iov_len;    
 //        };
 
@@ -1179,7 +1179,7 @@ static int do_write(struct iovec *iov, size_t count)
 	int res;
 	while (count) {
 		res = writev(sshfs.wfd, iov, count);
-		// iovcntä¸åº”è¶…è¿‡IOV_MAX=1024ï¼Œä½†æ˜¯å®é™…ä¼šå¤§äºè¿™ä¸ªå€¼ï¼Œæ‰€ä»¥éœ€è¦å¤šæ¬¡è°ƒç”¨writevã€‚
+		// iovcnt²»Ó¦³¬¹ıIOV_MAX=1024£¬µ«ÊÇÊµ¼Ê»á´óÓÚÕâ¸öÖµ£¬ËùÒÔĞèÒª¶à´Îµ÷ÓÃwritev¡£
 		if (res == -1) {
 			perror("write");
 			return -1;
@@ -1210,14 +1210,14 @@ static uint32_t sftp_get_id(void)
 // struct buffer {
 // 	uint8_t *p;
 // 	size_t len;
-// 	size_t size; ä»£è¡¨æ€»å¤§å°
+// 	size_t size; ´ú±í×Ü´óĞ¡
 // };
 static void buf_to_iov(const struct buffer *buf, struct iovec *iov)
 {
 	iov->iov_base = buf->p;
 	iov->iov_len = buf->len;
 }
-//è®¡ç®—iovåˆ—è¡¨ä¸­ç¦»æ•£å­˜å‚¨ç©ºé—´çš„æ€»é•¿åº¦
+//¼ÆËãiovÁĞ±íÖĞÀëÉ¢´æ´¢¿Õ¼äµÄ×Ü³¤¶È
 static size_t iov_length(const struct iovec *iov, unsigned long nr_segs)
 {
 	unsigned long seg;
@@ -1351,7 +1351,7 @@ static int clean_req(void *key_, struct request *req, gpointer user_data_)
 }
 // struct request {
 // 	unsigned int want_reply;
-// 	sem_t ready;//è¿™ä¸ªæ˜¯ä¿¡å·é‡å˜é‡ï¼Œç¬¬ä¸€æ¬¡è§ï¼Œç”¨æ¥å¤šè¿›ç¨‹åŒæ­¥
+// 	sem_t ready;//Õâ¸öÊÇĞÅºÅÁ¿±äÁ¿£¬µÚÒ»´Î¼û£¬ÓÃÀ´¶à½ø³ÌÍ¬²½
 // 	uint8_t reply_type;
 // 	uint32_t id;
 // 	int replied;
@@ -1370,7 +1370,7 @@ static int process_one_request(void)
 	struct buffer buf;
 	uint8_t type;
 	struct request *req;
-	uint32_t id;//è¿™ä¸ªidåº”è¯¥æ˜¯request hash table é‡Œé¢çš„keyï¼Œå¯ä»¥ç”¨æ¥ç´¢å¼•struct request
+	uint32_t id;//Õâ¸öidÓ¦¸ÃÊÇrequest hash table ÀïÃæµÄkey£¬¿ÉÒÔÓÃÀ´Ë÷Òıstruct request
 
 	buf_init(&buf, 0);
 	res = sftp_read(&type, &buf);
@@ -1978,7 +1978,7 @@ static int sftp_request(uint8_t type, const struct buffer *buf,
 {
 	struct iovec iov;
 
-	buf_to_iov(buf, &iov); //æŠŠpath å¤åˆ¶åˆ°iové‡Œé¢
+	buf_to_iov(buf, &iov); //°Ñpath ¸´ÖÆµ½iovÀïÃæ
 	return sftp_request_iov(type, &iov, 1, expect_type, outbuf);
 }
 
@@ -2223,11 +2223,11 @@ struct sshfs_dirp {
 };
 struct sshfs_dirent
 {
-Â  Â char* inode_id; /* inode number ç´¢å¼•èŠ‚ç‚¹å· */
-Â  Â off_t d_off; /* offset to this dirent åœ¨ç›®å½•æ–‡ä»¶ä¸­çš„åç§» */
-Â  Â unsigned short d_reclen; /* length of this d_name æ–‡ä»¶åé•¿ */
-Â  Â unsigned char d_type; /* the type of d_name æ–‡ä»¶ç±»å‹ */
-Â  Â char d_name [NAME_MAX+1]; /* file name (null-terminated) æ–‡ä»¶åï¼Œæœ€é•¿255å­—ç¬¦ */
+? ?char* inode_id; /* inode number Ë÷Òı½ÚµãºÅ */
+? ?off_t d_off; /* offset to this dirent ÔÚÄ¿Â¼ÎÄ¼şÖĞµÄÆ«ÒÆ */
+? ?unsigned short d_reclen; /* length of this d_name ÎÄ¼şÃû³¤ */
+? ?unsigned char d_type; /* the type of d_name ÎÄ¼şÀàĞÍ */
+? ?char d_name [NAME_MAX+1]; /* file name (null-terminated) ÎÄ¼şÃû£¬×î³¤255×Ö·û */
 }
 
 static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
@@ -2276,7 +2276,7 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
 	sd->offset = offset;
 	
 	if (offset > sd->eid_nums){
-		return 0;//éœ€è¦å¼„æ˜ç™½å¦‚ä½•å¤„ç†è¿™ç§é”™è¯¯
+		return 0;//ĞèÒªÅªÃ÷°×ÈçºÎ´¦ÀíÕâÖÖ´íÎó
 	}
 	while (1) {
 		struct stat st;
@@ -2678,7 +2678,7 @@ static int change_path_to_eid(const struct buffer *buf,char eid[20]){
 	if(buf_get_string(buf,&path) == -1)
 		return 0;
 	else
-		strcpy(eid,"10011");//éšä¾¿è®¡ç®—ä¸€ä¸ªeid
+		strcpy(eid,"10011");//Ëæ±ã¼ÆËãÒ»¸öeid
 		return 1;
 
 }
