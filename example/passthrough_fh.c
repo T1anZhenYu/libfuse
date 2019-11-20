@@ -111,8 +111,8 @@ static int xmp_readlink(const char *path, char *buf, size_t size)
 {
 	int res;
 
-	res = readlink(path, buf, size - 1);//è¿™ä¸ªä¸æ˜¯å¾ˆæ¸…æ¥šï¼Œæ˜¯è¯»çš„è½¯è¿žæŽ¥æ–‡ä»¶
-	//çš„å†…å®¹ï¼Œè¿˜æ˜¯è½¯è¿žæŽ¥æŒ‡å‘çš„æ–‡ä»¶çš„å†…å®¹ã€‚
+	res = readlink(path, buf, size - 1);//Õâ¸ö²»ÊÇºÜÇå³þ£¬ÊÇ¶ÁµÄÈíÁ¬½ÓÎÄ¼þ
+	//µÄÄÚÈÝ£¬»¹ÊÇÈíÁ¬½ÓÖ¸ÏòµÄÎÄ¼þµÄÄÚÈÝ¡£
 	if (res == -1)
 		return -errno;
 
@@ -142,7 +142,7 @@ static int xmp_opendir(const char *path, struct fuse_file_info *fi)
 	d->offset = 0;
 	d->entry = NULL;
 
-	fi->fh = (unsigned long) d;//ä¸ºä»€ä¹ˆç”¨dåšfhï¼Ÿ
+	fi->fh = (unsigned long) d;//ÎªÊ²Ã´ÓÃd×öfh£¿
 	return 0;
 }
 
@@ -158,8 +158,8 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 	struct xmp_dirp *d = get_dirp(fi);
 
 	(void) path;
-	if (offset != d->offset) {//ä¸ºä»€ä¹ˆä¼šå‡ºçŽ°è¿™ç§æƒ…å†µ
-#ifndef __FreeBSD__//FreeBSDæ˜¯ä¸€ç§ç±»UNIXæ“ä½œç³»ç»Ÿï¼Œ
+	if (offset != d->offset) {//ÎªÊ²Ã´»á³öÏÖÕâÖÖÇé¿ö
+#ifndef __FreeBSD__//FreeBSDÊÇÒ»ÖÖÀàUNIX²Ù×÷ÏµÍ³£¬
 		seekdir(d->dp, offset);
 #else
 		/* Subtract the one that we add when calling

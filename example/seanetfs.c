@@ -2223,11 +2223,11 @@ struct sshfs_dirp {
 };
 struct sshfs_dirent
 {
-? ?char* inode_id; /* inode number 索引节点号 */
-? ?off_t d_off; /* offset to this dirent 在目录文件中的偏移 */
-? ?unsigned short d_reclen; /* length of this d_name 文件名长 */
-? ?unsigned char d_type; /* the type of d_name 文件类型 */
-? ?char d_name [NAME_MAX+1]; /* file name (null-terminated) 文件名，最长255字符 */
+	char* inode_id; /* inode number 索引节点号 */
+	off_t d_off; /* offset to this dirent 在目录文件中的偏移 */
+	unsigned short d_reclen; /* length of this d_name 文件名长 */
+	unsigned char d_type; /* the type of d_name 文件类型 */
+	char d_name [NAME_MAX+1]; /* file name (null-terminated) 文件名，最长255字符 */
 }
 
 static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
@@ -2290,9 +2290,7 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
 			// Seanetfs_getfile(current_dir_eid,(char*)sf);
 
 			sd->entry->inode_id = current_dir_eid;
-			sd->entry->d_name = sd->mc[offset]->
-			if (!d->entry)
-				break;
+			sd->entry->d_name = sd->mc[offset]->name; 
 		}
 
 
