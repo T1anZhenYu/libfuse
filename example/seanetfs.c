@@ -56,7 +56,7 @@
 #ifndef MAP_LOCKED
 #define MAP_LOCKED 0
 #endif
-
+#define NAME_MAX 255
 #if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
 #define MAP_ANONYMOUS MAP_ANON
 #endif
@@ -193,7 +193,7 @@ struct read_chunk {
 	struct list_head reqs;
 	struct sshfs_io sio;
 };
-
+//实际上就是inode
 struct sshfs_file {
 	struct buffer handle;
 	struct list_head write_reqs;
@@ -205,16 +205,18 @@ struct sshfs_file {
 	int connver;
 	int modifver;
 	int refs;
-	char* root_manifest_eid;	
+	char* root_manifest_eid;//rootmanifesteid很重要	
 	uint32_t flags;
-	uint64_t size = 0;
-	uint32_t uid = 0;
-	uint32_t gid = 0;
-	uint32_t atime = 0;
-	uint32_t mtime = 0;
-	uint32_t mode = S_IFREG | 0777;
-	uint32_t inode;
-	uint32_t dev;
+	uint64_t size = 0;//这个表示inode下面有多少个逻辑单元（文件/文件夹的个数，或者是
+	//文件拆分的chunk的个数
+	uint64_t bit_size = 0;//表示文件字节大小
+	uint32_t uid = 0;//拥有者id
+	uint32_t gid = 0;//拥有者所在gruop id
+	uint32_t atime = 0;//文件上次打开时间
+	uint32_t mtime = 0;//文件上次变动时间
+	uint32_t ctime = 0;//inode 上次变动时间
+	uint32_t mode = S_IFREG | 0777;//inode类型（表示是文件还是文件夹）
+	uint32_t dev;//
 };
 
 struct sshfs {
@@ -2208,35 +2210,56 @@ static int sftp_readdir_sync(struct buffer *handle, void *buf, off_t offset,
 
 	return err;
 }
+struct manifest_content{
+	char* name = new char[NAME_MAX];
+	char* eid = new char[20];
+};
+struct sshfs_dirp {
+	struct manifest_content* mc;
+	struct sshfs_dirent *entry;
+	off_t offset;
+	size_t eid_nums;
+
+};
+struct sshfs_dirent
+{
+   char* inode_id; /* inode number 索引节点号 */
+   off_t d_off; /* offset to this dirent 在目录文件中的偏移 */
+   unsigned short d_reclen; /* length of this d_name 文件名长 */
+   unsigned char d_type; /* the type of d_name 文件类型 */
+   char d_name [NAME_MAX+1]; /* file name (null-terminated) 文件名，最长255字符 */
+}
 
 static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
 {
 	int err;
 	struct buffer buf;
-
+	struct buffer *handle;
 	handle = malloc(sizeof(struct buffer));
 	if(handle == NULL)
 		return -ENOMEM;
 
 	buf_init(&buf, 0);
 	buf_add_path(&buf, path);
-
-	// err = sftp_request(SSH_FXP_OPENDIR, &buf, SSH_FXP_HANDLE, handle);
-	// if (!err) {
-	// 	buf_finish(handle);
-	// 	fi->fh = (unsigned long) handle;
-	// } else
-	// 	free(handle);
 	char* real_path;
 	buf_get_string(&buf,&real_path);
-	res = open(real_path,fi->flags);
-	if (res == -1)
-		return -errno;
+	char* inode_eid = new char[20];
+	change_path_to_eid(&buf,inode_eid);
 
-	fi->fh = res;
+	struct sshfs_file * inode_content = malloc(sizeof(struct sshfs_file));
+	Seanetfs_getfile(inode_eid,(char*)inode_content);
+
+	struct sshfs_dirp *sd = new struct sshfs_dirp;
+	sd->mc = malloc(sizeof(manifest_content) *inode_content->size );
+	Seanetfs_getfile(inode_content->root_manifest_eid,(char*)sd->mc)
+	sd->eid_nums = inode_content->size;
+	sd->offset = 0;
+
+	fi->fh = (unsigned long) sd;
+
 	buf_free(&buf);
 	free(real_path)
-	return err;
+	return 0;
 }
 
 static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
@@ -2245,16 +2268,34 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
 {
 	(void) path; (void) flags;
 	int err;
-	struct buffer *handle;
+	struct sshfs_dirp *sd;
+	sd = (struct sshfs_dirp *)(uintptr_t)fi->fh;
 
-	handle = (struct buffer*) fi->fh;
 
-	if (sshfs.sync_readdir)
-		err = sftp_readdir_sync(handle, dbuf, offset, filler);
-	else
-		err = sftp_readdir_async(handle, dbuf, offset, filler);
+	sd->entry = NULL;
+	sd->offset = offset;
+	
+	if (offset > sd->eid_nums){
+		return 0;//需要弄明白如何处理这种错误
+	}
+	while (1) {
+		struct stat st;
+		off_t nextoff;
+		enum fuse_fill_dir_flags fill_flags = 0;
+		char* current_dir_eid = malloc(sizeof(char[20]));
+		strncpy(current_dir_eid,sd->eids+sd->offset*20,20);
 
-	return err;
+		if (!sd->entry) {
+			// struct sshfs_file* sf = new struct sshfs_file;	
+			// Seanetfs_getfile(current_dir_eid,(char*)sf);
+
+			sd->entry->inode_id = current_dir_eid;
+			sd->entry->d_name = sd->mc[offset]->
+			if (!d->entry)
+				break;
+		}
+
+
 }
 
 static int sshfs_releasedir(const char *path, struct fuse_file_info *fi)
@@ -2284,34 +2325,6 @@ static int sshfs_mkdir(const char *path, mode_t mode)
 	return err;
 }
 
-static int sshfs_mknod(const char *path, mode_t mode, dev_t rdev)
-{
-	int err;
-	struct buffer buf;
-	struct buffer handle;
-	(void) rdev;
-
-	if ((mode & S_IFMT) != S_IFREG)
-		return -EPERM;
-
-	buf_init(&buf, 0);
-	buf_add_path(&buf, path);
-	buf_add_uint32(&buf, SSH_FXF_WRITE | SSH_FXF_CREAT | SSH_FXF_EXCL);
-	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_PERMISSIONS);
-	buf_add_uint32(&buf, mode);
-	err = sftp_request(SSH_FXP_OPEN, &buf, SSH_FXP_HANDLE, &handle);
-	if (!err) {
-		int err2;
-		buf_finish(&handle);
-		err2 = sftp_request(SSH_FXP_CLOSE, &handle, SSH_FXP_STATUS,
-				    NULL);
-		if (!err)
-			err = err2;
-		buf_free(&handle);
-	}
-	buf_free(&buf);
-	return err;
-}
 
 static int sshfs_symlink(const char *from, const char *to)
 {
@@ -2353,30 +2366,6 @@ static int sshfs_rmdir(const char *path)
 	return err;
 }
 
-static int sshfs_do_rename(const char *from, const char *to)
-{
-	int err;
-	struct buffer buf;
-	buf_init(&buf, 0);
-	buf_add_path(&buf, from);
-	buf_add_path(&buf, to);
-	err = sftp_request(SSH_FXP_RENAME, &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-	return err;
-}
-
-static int sshfs_ext_posix_rename(const char *from, const char *to)
-{
-	int err;
-	struct buffer buf;
-	buf_init(&buf, 0);
-	buf_add_string(&buf, SFTP_EXT_POSIX_RENAME);
-	buf_add_path(&buf, from);
-	buf_add_path(&buf, to);
-	err = sftp_request(SSH_FXP_EXTENDED, &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-	return err;
-}
 
 static void random_string(char *str, int length)
 {
@@ -2438,140 +2427,12 @@ static int sshfs_link(const char *from, const char *to)
 	return err;
 }
 
-static inline int sshfs_file_is_conn(struct sshfs_file *sf)
-{
-	int ret;
-
-	pthread_mutex_lock(&sshfs.lock);
-	ret = (sf->connver == sshfs.connver);
-	pthread_mutex_unlock(&sshfs.lock);
-
-	return ret;
-}
 
 static inline struct sshfs_file *get_sshfs_file(struct fuse_file_info *fi)
 {
 	return (struct sshfs_file *) (uintptr_t) fi->fh;
 }
 
-static int sshfs_chmod(const char *path, mode_t mode,
-                       struct fuse_file_info *fi)
-{
-	(void) fi;
-	int err;
-	struct buffer buf;
-	struct sshfs_file *sf = NULL;
-
-	if (fi != NULL) {
-		sf = get_sshfs_file(fi);
-		if (!sshfs_file_is_conn(sf))
-			return -EIO;
-	}
-
-	buf_init(&buf, 0);
-	if (sf == NULL)
-		buf_add_path(&buf, path);
-	else 
-		buf_add_buf(&buf, &sf->handle);
-	
-	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_PERMISSIONS);
-	buf_add_uint32(&buf, mode);
-	
-	/* FIXME: really needs LSETSTAT extension (debian Bug#640038) */
-	err = sftp_request(sf == NULL ? SSH_FXP_SETSTAT : SSH_FXP_FSETSTAT,
-			   &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-	return err;
-}
-
-static int sshfs_chown(const char *path, uid_t uid, gid_t gid,
-                       struct fuse_file_info *fi)
-{
-	(void) fi;
-	int err;
-	struct buffer buf;
-	struct sshfs_file *sf = NULL;
-
-	if (fi != NULL) {
-		sf = get_sshfs_file(fi);
-		if (!sshfs_file_is_conn(sf))
-			return -EIO;
-	}
-	
-	if (sshfs.remote_uid_detected) {
-		if (uid == sshfs.local_uid)
-			uid = sshfs.remote_uid;
-		if (gid == sshfs.local_gid)
-			gid = sshfs.remote_gid;
-	}
-	if (sshfs.idmap == IDMAP_FILE && sshfs.r_uid_map)
-		if(translate_id(&uid, sshfs.r_uid_map) == -1)
-			return -EPERM;
-	if (sshfs.idmap == IDMAP_FILE && sshfs.r_gid_map)
-		if (translate_id(&gid, sshfs.r_gid_map) == -1)
-			return -EPERM;
-
-	buf_init(&buf, 0);
-	if (sf == NULL)
-		buf_add_path(&buf, path);
-	else 
-		buf_add_buf(&buf, &sf->handle);
-	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_UIDGID);
-	buf_add_uint32(&buf, uid);
-	buf_add_uint32(&buf, gid);
-
-	err = sftp_request(sf == NULL ? SSH_FXP_SETSTAT : SSH_FXP_FSETSTAT,
-			   &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-	return err;
-}
-
-static int sshfs_truncate_workaround(const char *path, off_t size,
-                                     struct fuse_file_info *fi);
-
-static void sshfs_inc_modifver(void)
-{
-	pthread_mutex_lock(&sshfs.lock);
-	sshfs.modifver++;
-	pthread_mutex_unlock(&sshfs.lock);
-}
-
-static int sshfs_utimens(const char *path, const struct timespec tv[2],
-			 struct fuse_file_info *fi)
-{
-	(void) fi;
-	int err;
-	struct buffer buf;
-	struct sshfs_file *sf = NULL;
-	time_t asec = tv[0].tv_sec, msec = tv[1].tv_sec;
-
-	struct timeval now;
-	gettimeofday(&now, NULL);
-	if (asec == 0)
-		asec = now.tv_sec;
-	if (msec == 0)
-		msec = now.tv_sec;
-
-	if (fi != NULL) {
-		sf = get_sshfs_file(fi);
-		if (!sshfs_file_is_conn(sf))
-			return -EIO;
-	}
-
-	buf_init(&buf, 0);
-	if (sf == NULL)
-		buf_add_path(&buf, path);
-	else 
-		buf_add_buf(&buf, &sf->handle);
-	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_ACMODTIME);
-	buf_add_uint32(&buf, asec);
-	buf_add_uint32(&buf, msec);
-
-	err = sftp_request(sf == NULL ? SSH_FXP_SETSTAT : SSH_FXP_FSETSTAT,
-			   &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-	return err;
-}
 
 static int sshfs_open_common(const char *path, mode_t mode,
                              struct fuse_file_info *fi)
@@ -2699,28 +2560,6 @@ static int sshfs_flush(const char *path, struct fuse_file_info *fi)
 	return err;
 }
 
-static int sshfs_fsync(const char *path, int isdatasync,
-                       struct fuse_file_info *fi)
-{
-	int err;
-	(void) isdatasync;
-
-        err = sshfs_flush(path, fi);
-        if (err)
-		return err;
-
-	if (!sshfs.ext_fsync)
-		return err;
-
-	struct buffer buf;
-	struct sshfs_file *sf = get_sshfs_file(fi);
-	buf_init(&buf, 0);
-	buf_add_string(&buf, SFTP_EXT_FSYNC);
-	buf_add_buf(&buf, &sf->handle);
-	err = sftp_request(SSH_FXP_EXTENDED, &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-	return err;
-}
 
 static void sshfs_file_put(struct sshfs_file *sf)
 {
@@ -2834,44 +2673,12 @@ static int sshfs_create(const char *path, mode_t mode,
 	return sshfs_open_common(path, mode, fi);
 }
 
-static int sshfs_truncate(const char *path, off_t size,
-			  struct fuse_file_info *fi)
-{
-	int err;
-	struct buffer buf;
-	struct sshfs_file *sf = NULL;
-
-	if (fi != NULL) {
-		sf = get_sshfs_file(fi);
-		if (!sshfs_file_is_conn(sf))
-			return -EIO;
-	}
-	
-	sshfs_inc_modifver();
-	if (sshfs.truncate_workaround)
-		return sshfs_truncate_workaround(path, size, fi);
-	
-	buf_init(&buf, 0);
-
-	if (sf != NULL)
-		buf_add_buf(&buf, &sf->handle);
-	else
-		buf_add_path(&buf, path);
-
-	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_SIZE);
-	buf_add_uint64(&buf, size);
-	err = sftp_request(sf == NULL ? SSH_FXP_SETSTAT : SSH_FXP_FSETSTAT,
-			   &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-
-	return err;
-}
-static int change_path_to_eid(const struct buffer *buf,char** eid){
+static int change_path_to_eid(const struct buffer *buf,char eid[20]){
 	char *path
 	if(buf_get_string(buf,&path) == -1)
 		return 0;
 	else
-		*eid = "110011";//随便计算一个eid
+		strcpy(eid,"10011");//随便计算一个eid
 		return 1;
 
 }
@@ -2891,7 +2698,7 @@ static int sshfs_getattr(const char *path, struct stat *stbuf,
 	if(sf == NULL) {
 		buf_add_path(&buf, path);
 		if(change_path_to_eid(buf,&inode_eid)){
-			if(Seanetfs_getinode(inode_eid,(char *)sf) == 0){
+			if(Seanetfs_getfile(inode_eid,(char *)sf) == 0){
 				return -EIO
 			}
 		}
