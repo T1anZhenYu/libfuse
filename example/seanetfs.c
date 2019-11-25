@@ -217,6 +217,7 @@ struct sshfs_file {
 	uint32_t ctime = 0;//inode 上次变动时间
 	uint32_t mode = S_IFREG | 0777;//inode类型（表示是文件还是文件夹）
 	uint32_t dev;//
+	uint32_t n_link = 1;
 };
 
 struct sshfs {
@@ -2254,7 +2255,7 @@ static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
 	Seanetfs_getfile(inode_content->root_manifest_eid,(char*)sd->mc)
 	sd->eid_nums = inode_content->size;
 	sd->offset = 0;
-
+	sd->dir_inode = inode_content;
 	fi->fh = (unsigned long) sd;
 
 	buf_free(&buf);
@@ -2270,7 +2271,6 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
 	int err;
 	struct sshfs_dirp *sd;
 	sd = (struct sshfs_dirp *)(uintptr_t)fi->fh;
-
 
 	sd->entry = NULL;
 	sd->offset = offset;
@@ -2288,24 +2288,44 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
 		if (!sd->entry) {
 			// struct sshfs_file* sf = new struct sshfs_file;	
 			// Seanetfs_getfile(current_dir_eid,(char*)sf);
-
+			sd->entry = (struct sshfs_dirent *)malloc(sizeof(struct sshfs_dirent));
 			sd->entry->inode_id = current_dir_eid;
 			sd->entry->d_name = sd->mc[offset]->name; 
 		}
-
-
+		
+//		struct sshfs_file * temp_inode = malloc(sizeof(struct sshfs_file));
+		struct sshfs_file *temp_inode;
+		
+	
+		Seanetfs_getfile(sd->entry->inode_id,(char*)temp_inode);
+		
+		st->st_atime = temp_inode->atime;
+		st->st_ctime = temp_inode->ctime;
+		st->st_dev = temp_inode->dev;
+		st->st_gid = temp_inode->gid;
+		st->st_ino = sd->entry->inode_id;
+		st->st_mode = temp_inode->mode;//不确定这个是否成立。 
+		st->st_mtime = temp_inode->mtime;
+		st->st_nlink = temp_inode->n_link;
+		st->st_size = temp_inode->bit_size;
+		st->st_uid = temp_inode->uid;
+		
+		nextoff = offset + 1;
+		if (filler(buf, sd->entry->d_name, &st, nextoff, fill_flags))
+			break;
+		free(sd->entry);
+		
+		sd->offset = nextoff;
+		}
+	return 0;
 }
-
 static int sshfs_releasedir(const char *path, struct fuse_file_info *fi)
 {
 	(void) path;
 	int err;
-	struct buffer *handle;
-
-	handle = (struct buffer*) fi->fh;
-	err = sftp_request(SSH_FXP_CLOSE, handle, 0, NULL);
-	buf_free(handle);
-	free(handle);
+	struct sshfs_dirp * sd;
+	sd = (struct sshfs_dirp *)(uintptr_t)fi->fh;
+	free(sd);
 	return err;
 }
 

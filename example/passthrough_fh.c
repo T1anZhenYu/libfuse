@@ -192,7 +192,22 @@ static int xmp_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
 		if (!(fill_flags & FUSE_FILL_DIR_PLUS)) {
 			memset(&st, 0, sizeof(st));
 			st.st_ino = d->entry->d_ino;
-			st.st_mode = d->entry->d_type << 12;
+			st.st_mode = d->entry->d_type << 12;// 不懂，这两者有何关系
+			//struct dirent   
+			//{   
+			//　　long d_ino; /* inode number 索引节点号 */  
+			//　　   
+			//    off_t d_off; /* offset to this dirent 在目录文件中的偏移 */  
+			//　　   
+			//    unsigned short d_reclen; /* length of this d_name 文件名长 */  
+			//　　   
+			//    unsigned char d_type; /* the type of d_name 文件类型 */  
+			//　　   
+			//    char d_name [NAME_MAX+1]; /* file name (null-terminated) 文件名，最长255字符 */  
+			//}  
+			//	struct stat {   
+			//  
+			//        mode_t     st_mode;       //文件访问权限  
 		}
 		nextoff = telldir(d->dp);
 #ifdef __FreeBSD__		
