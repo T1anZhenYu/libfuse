@@ -2452,97 +2452,97 @@ static inline struct sshfs_file *get_sshfs_file(struct fuse_file_info *fi)
 }
 
 
-static int sshfs_open_common(const char *path, mode_t mode,
-                             struct fuse_file_info *fi)
-{
-	int err;
-	int err2;
-	struct buffer buf;
-	struct buffer outbuf;
-	struct stat stbuf;
-	struct sshfs_file *sf;
-	struct request *open_req;
-	uint32_t pflags = 0;
-	struct iovec iov;
-	uint8_t type;
-	uint64_t wrctr = 0;
-
-	if (sshfs.dir_cache)
-		wrctr = cache_get_write_ctr();
-
-  if (sshfs.direct_io)
-    fi->direct_io = 1;
-
-	if ((fi->flags & O_ACCMODE) == O_RDONLY)
-		pflags = SSH_FXF_READ;
-	else if((fi->flags & O_ACCMODE) == O_WRONLY)
-		pflags = SSH_FXF_WRITE;
-	else if ((fi->flags & O_ACCMODE) == O_RDWR)
-		pflags = SSH_FXF_READ | SSH_FXF_WRITE;
-	else
-		return -EINVAL;
-
-	if (fi->flags & O_CREAT)
-		pflags |= SSH_FXF_CREAT;
-
-	if (fi->flags & O_EXCL)
-		pflags |= SSH_FXF_EXCL;
-
-	if (fi->flags & O_TRUNC)
-		pflags |= SSH_FXF_TRUNC;
-
-	if (fi->flags & O_APPEND)
-		pflags |= SSH_FXF_APPEND;
-	
-	sf = g_new0(struct sshfs_file, 1);
-	list_init(&sf->write_reqs);
-	pthread_cond_init(&sf->write_finished, NULL);
-	/* Assume random read after open */
-	sf->is_seq = 0;
-	sf->refs = 1;
-	sf->next_pos = 0;
-	pthread_mutex_lock(&sshfs.lock);
-	sf->modifver= sshfs.modifver;
-	sf->connver = sshfs.connver;
-	pthread_mutex_unlock(&sshfs.lock);
-	buf_init(&buf, 0);
-	buf_add_path(&buf, path);
-	buf_add_uint32(&buf, pflags);
-	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_PERMISSIONS);
-	buf_add_uint32(&buf, mode);
-	buf_to_iov(&buf, &iov);
-	sftp_request_send(SSH_FXP_OPEN, &iov, 1, NULL, NULL, 1, NULL,
-			  &open_req);
-	buf_clear(&buf);
-	buf_add_path(&buf, path);
-	type = sshfs.follow_symlinks ? SSH_FXP_STAT : SSH_FXP_LSTAT;
-	err2 = sftp_request(type, &buf, SSH_FXP_ATTRS, &outbuf);
-	if (!err2) {
-		err2 = buf_get_attrs(&outbuf, &stbuf, NULL);
-		buf_free(&outbuf);
-	}
-	err = sftp_request_wait(open_req, SSH_FXP_OPEN, SSH_FXP_HANDLE,
-				&sf->handle);
-	if (!err && err2) {
-		buf_finish(&sf->handle);
-		sftp_request(SSH_FXP_CLOSE, &sf->handle, 0, NULL);
-		buf_free(&sf->handle);
-		err = err2;
-	}
-
-	if (!err) {
-		if (sshfs.dir_cache)
-			cache_add_attr(path, &stbuf, wrctr);
-		buf_finish(&sf->handle);
-		fi->fh = (unsigned long) sf;
-	} else {
-		if (sshfs.dir_cache)
-			cache_invalidate(path);
-		g_free(sf);
-	}
-	buf_free(&buf);
-	return err;
-}
+//static int sshfs_open_common(const char *path, mode_t mode,
+//                             struct fuse_file_info *fi)
+//{
+//	int err;
+//	int err2;
+//	struct buffer buf;
+//	struct buffer outbuf;
+//	struct stat stbuf;
+//	struct sshfs_file *sf;
+//	struct request *open_req;
+//	uint32_t pflags = 0;
+//	struct iovec iov;
+//	uint8_t type;
+//	uint64_t wrctr = 0;
+//
+//	if (sshfs.dir_cache)
+//		wrctr = cache_get_write_ctr();
+//
+//  if (sshfs.direct_io)
+//    fi->direct_io = 1;
+//
+//	if ((fi->flags & O_ACCMODE) == O_RDONLY)
+//		pflags = SSH_FXF_READ;
+//	else if((fi->flags & O_ACCMODE) == O_WRONLY)
+//		pflags = SSH_FXF_WRITE;
+//	else if ((fi->flags & O_ACCMODE) == O_RDWR)
+//		pflags = SSH_FXF_READ | SSH_FXF_WRITE;
+//	else
+//		return -EINVAL;
+//
+//	if (fi->flags & O_CREAT)
+//		pflags |= SSH_FXF_CREAT;
+//
+//	if (fi->flags & O_EXCL)
+//		pflags |= SSH_FXF_EXCL;
+//
+//	if (fi->flags & O_TRUNC)
+//		pflags |= SSH_FXF_TRUNC;
+//
+//	if (fi->flags & O_APPEND)
+//		pflags |= SSH_FXF_APPEND;
+//	
+//	sf = g_new0(struct sshfs_file, 1);
+//	list_init(&sf->write_reqs);
+//	pthread_cond_init(&sf->write_finished, NULL);
+//	/* Assume random read after open */
+//	sf->is_seq = 0;
+//	sf->refs = 1;
+//	sf->next_pos = 0;
+//	pthread_mutex_lock(&sshfs.lock);
+//	sf->modifver= sshfs.modifver;
+//	sf->connver = sshfs.connver;
+//	pthread_mutex_unlock(&sshfs.lock);
+//	buf_init(&buf, 0);
+//	buf_add_path(&buf, path);
+//	buf_add_uint32(&buf, pflags);
+//	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_PERMISSIONS);
+//	buf_add_uint32(&buf, mode);
+//	buf_to_iov(&buf, &iov);
+//	sftp_request_send(SSH_FXP_OPEN, &iov, 1, NULL, NULL, 1, NULL,
+//			  &open_req);
+//	buf_clear(&buf);
+//	buf_add_path(&buf, path);
+//	type = sshfs.follow_symlinks ? SSH_FXP_STAT : SSH_FXP_LSTAT;
+//	err2 = sftp_request(type, &buf, SSH_FXP_ATTRS, &outbuf);
+//	if (!err2) {
+//		err2 = buf_get_attrs(&outbuf, &stbuf, NULL);
+//		buf_free(&outbuf);
+//	}
+//	err = sftp_request_wait(open_req, SSH_FXP_OPEN, SSH_FXP_HANDLE,
+//				&sf->handle);
+//	if (!err && err2) {
+//		buf_finish(&sf->handle);
+//		sftp_request(SSH_FXP_CLOSE, &sf->handle, 0, NULL);
+//		buf_free(&sf->handle);
+//		err = err2;
+//	}
+//
+//	if (!err) {
+//		if (sshfs.dir_cache)
+//			cache_add_attr(path, &stbuf, wrctr);
+//		buf_finish(&sf->handle);
+//		fi->fh = (unsigned long) sf;
+//	} else {
+//		if (sshfs.dir_cache)
+//			cache_invalidate(path);
+//		g_free(sf);
+//	}
+//	buf_free(&buf);
+//	return err;
+//}
 
 static int sshfs_open(const char *path, struct fuse_file_info *fi)
 {
