@@ -135,11 +135,11 @@
 /* Asynchronous readdir parameters */
 #define READDIR_START 2
 #define READDIR_MAX 32
-
+#define CHUNK_SIZE 128
 #define MAX_PASSWORD 1024
 
 #ifdef __APPLE__
-static char sshfs_program_path[PATH_MAX] = { 0 };
+static char seafile_program_path[PATH_MAX] = { 0 };
 #endif /* __APPLE__ */
 
 struct buffer {
@@ -171,14 +171,14 @@ struct request {
 	struct list_head list;
 };
 
-struct sshfs_io {
+struct seafile_io {
 	int num_reqs;
 	pthread_cond_t finished;
 	int error;
 };
 
 struct read_req {
-	struct sshfs_io *sio;
+	struct seafile_io *sio;
 	struct list_head list;
 	struct buffer data;
 	size_t size;
@@ -191,15 +191,16 @@ struct read_chunk {
 	int refs;
 	long modifver;
 	struct list_head reqs;
-	struct sshfs_io sio;
+	struct seafile_io sio;
 };
 //实际上就是inode
-struct sshfs_file {
+struct seafile_inode {
 	struct buffer handle;
 	struct list_head write_reqs;
 	pthread_cond_t write_finished;
 	int write_error;
 	struct read_chunk *readahead;
+	struct context* ctx; 
 	off_t next_pos;
 	int is_seq;
 	int connver;
@@ -220,7 +221,7 @@ struct sshfs_file {
 	uint32_t n_link = 1;
 };
 
-struct sshfs {
+struct seafile {
 	char *directport;
 	char *ssh_command;
 	char *sftp_server;
@@ -307,7 +308,7 @@ struct sshfs {
 	unsigned int num_connect;
 };
 
-static struct sshfs sshfs;
+static struct seafile seafile;
 
 static const char *ssh_opts[] = {
 	"AddressFamily",
@@ -391,59 +392,59 @@ enum {
 	NOMAP_ERROR,
 };
 
-#define SSHFS_OPT(t, p, v) { t, offsetof(struct sshfs, p), v }
+#define seafile_OPT(t, p, v) { t, offsetof(struct seafile, p), v }
 
-static struct fuse_opt sshfs_opts[] = {
-	SSHFS_OPT("directport=%s",     directport, 0),
-	SSHFS_OPT("ssh_command=%s",    ssh_command, 0),
-	SSHFS_OPT("sftp_server=%s",    sftp_server, 0),
-	SSHFS_OPT("max_read=%u",       max_read, 0),
-	SSHFS_OPT("max_write=%u",      max_write, 0),
-	SSHFS_OPT("ssh_protocol=%u",   ssh_ver, 0),
-	SSHFS_OPT("-1",                ssh_ver, 1),
-	SSHFS_OPT("workaround=%s",     workarounds, 0),
-	SSHFS_OPT("idmap=none",        idmap, IDMAP_NONE),
-	SSHFS_OPT("idmap=user",        idmap, IDMAP_USER),
-	SSHFS_OPT("idmap=file",        idmap, IDMAP_FILE),
-	SSHFS_OPT("uidfile=%s",        uid_file, 0),
-	SSHFS_OPT("gidfile=%s",        gid_file, 0),
-	SSHFS_OPT("nomap=ignore",      nomap, NOMAP_IGNORE),
-	SSHFS_OPT("nomap=error",       nomap, NOMAP_ERROR),
-	SSHFS_OPT("sshfs_sync",        sync_write, 1),
-	SSHFS_OPT("no_readahead",      sync_read, 1),
-	SSHFS_OPT("sync_readdir",      sync_readdir, 1),
-	SSHFS_OPT("sshfs_debug",       debug, 1),
-	SSHFS_OPT("sshfs_verbose",     verbose, 1),
-	SSHFS_OPT("reconnect",         reconnect, 1),
-	SSHFS_OPT("transform_symlinks", transform_symlinks, 1),
-	SSHFS_OPT("follow_symlinks",   follow_symlinks, 1),
-	SSHFS_OPT("no_check_root",     no_check_root, 1),
-	SSHFS_OPT("password_stdin",    password_stdin, 1),
-	SSHFS_OPT("delay_connect",     delay_connect, 1),
-	SSHFS_OPT("slave",             slave, 1),
-	SSHFS_OPT("disable_hardlink",  disable_hardlink, 1),
-	SSHFS_OPT("dir_cache=yes", dir_cache, 1),
-	SSHFS_OPT("dir_cache=no",  dir_cache, 0),
-	SSHFS_OPT("direct_io",  direct_io, 1),
+static struct fuse_opt seafile_opts[] = {
+	seafile_OPT("directport=%s",     directport, 0),
+	seafile_OPT("ssh_command=%s",    ssh_command, 0),
+	seafile_OPT("sftp_server=%s",    sftp_server, 0),
+	seafile_OPT("max_read=%u",       max_read, 0),
+	seafile_OPT("max_write=%u",      max_write, 0),
+	seafile_OPT("ssh_protocol=%u",   ssh_ver, 0),
+	seafile_OPT("-1",                ssh_ver, 1),
+	seafile_OPT("workaround=%s",     workarounds, 0),
+	seafile_OPT("idmap=none",        idmap, IDMAP_NONE),
+	seafile_OPT("idmap=user",        idmap, IDMAP_USER),
+	seafile_OPT("idmap=file",        idmap, IDMAP_FILE),
+	seafile_OPT("uidfile=%s",        uid_file, 0),
+	seafile_OPT("gidfile=%s",        gid_file, 0),
+	seafile_OPT("nomap=ignore",      nomap, NOMAP_IGNORE),
+	seafile_OPT("nomap=error",       nomap, NOMAP_ERROR),
+	seafile_OPT("seafile_sync",        sync_write, 1),
+	seafile_OPT("no_readahead",      sync_read, 1),
+	seafile_OPT("sync_readdir",      sync_readdir, 1),
+	seafile_OPT("seafile_debug",       debug, 1),
+	seafile_OPT("seafile_verbose",     verbose, 1),
+	seafile_OPT("reconnect",         reconnect, 1),
+	seafile_OPT("transform_symlinks", transform_symlinks, 1),
+	seafile_OPT("follow_symlinks",   follow_symlinks, 1),
+	seafile_OPT("no_check_root",     no_check_root, 1),
+	seafile_OPT("password_stdin",    password_stdin, 1),
+	seafile_OPT("delay_connect",     delay_connect, 1),
+	seafile_OPT("slave",             slave, 1),
+	seafile_OPT("disable_hardlink",  disable_hardlink, 1),
+	seafile_OPT("dir_cache=yes", dir_cache, 1),
+	seafile_OPT("dir_cache=no",  dir_cache, 0),
+	seafile_OPT("direct_io",  direct_io, 1),
 
-	SSHFS_OPT("-h",		show_help, 1),
-	SSHFS_OPT("--help",	show_help, 1),
-	SSHFS_OPT("-V",		show_version, 1),
-	SSHFS_OPT("--version",	show_version, 1),
-	SSHFS_OPT("-d",		debug, 1),
-	SSHFS_OPT("debug",	debug, 1),
-	SSHFS_OPT("-v",		verbose, 1),
-	SSHFS_OPT("verbose",	verbose, 1),
-	SSHFS_OPT("-f",		foreground, 1),
-	SSHFS_OPT("-s",		singlethread, 1),
+	seafile_OPT("-h",		show_help, 1),
+	seafile_OPT("--help",	show_help, 1),
+	seafile_OPT("-V",		show_version, 1),
+	seafile_OPT("--version",	show_version, 1),
+	seafile_OPT("-d",		debug, 1),
+	seafile_OPT("debug",	debug, 1),
+	seafile_OPT("-v",		verbose, 1),
+	seafile_OPT("verbose",	verbose, 1),
+	seafile_OPT("-f",		foreground, 1),
+	seafile_OPT("-s",		singlethread, 1),
 
 	FUSE_OPT_KEY("-p ",            KEY_PORT),
 	FUSE_OPT_KEY("-C",             KEY_COMPRESS),
 	FUSE_OPT_KEY("-F ",            KEY_CONFIGFILE),
 
 	/* For backwards compatibility */
-	SSHFS_OPT("cache=yes", dir_cache, 1),
-	SSHFS_OPT("cache=no",  dir_cache, 0),
+	seafile_OPT("cache=yes", dir_cache, 1),
+	seafile_OPT("cache=no",  dir_cache, 0),
 	
 	FUSE_OPT_KEY("writeback_cache=no", FUSE_OPT_KEY_DISCARD),
 	FUSE_OPT_KEY("unreliable_append", FUSE_OPT_KEY_DISCARD),
@@ -460,27 +461,27 @@ static struct fuse_opt sshfs_opts[] = {
 };
 
 static struct fuse_opt workaround_opts[] = {
-	SSHFS_OPT("none",       rename_workaround, 0),
-	SSHFS_OPT("none",       truncate_workaround, 0),
-	SSHFS_OPT("none",       buflimit_workaround, 0),
-	SSHFS_OPT("none",       fstat_workaround, 0),
-	SSHFS_OPT("rename",     rename_workaround, 1),
-	SSHFS_OPT("norename",   rename_workaround, 0),
-	SSHFS_OPT("renamexdev",   renamexdev_workaround, 1),
-	SSHFS_OPT("norenamexdev", renamexdev_workaround, 0),
-	SSHFS_OPT("truncate",   truncate_workaround, 1),
-	SSHFS_OPT("notruncate", truncate_workaround, 0),
-	SSHFS_OPT("buflimit",   buflimit_workaround, 1),
-	SSHFS_OPT("nobuflimit", buflimit_workaround, 0),
-	SSHFS_OPT("fstat",      fstat_workaround, 1),
-	SSHFS_OPT("nofstat",    fstat_workaround, 0),
-	SSHFS_OPT("createmode",   createmode_workaround, 1),
-	SSHFS_OPT("nocreatemode", createmode_workaround, 0),
+	seafile_OPT("none",       rename_workaround, 0),
+	seafile_OPT("none",       truncate_workaround, 0),
+	seafile_OPT("none",       buflimit_workaround, 0),
+	seafile_OPT("none",       fstat_workaround, 0),
+	seafile_OPT("rename",     rename_workaround, 1),
+	seafile_OPT("norename",   rename_workaround, 0),
+	seafile_OPT("renamexdev",   renamexdev_workaround, 1),
+	seafile_OPT("norenamexdev", renamexdev_workaround, 0),
+	seafile_OPT("truncate",   truncate_workaround, 1),
+	seafile_OPT("notruncate", truncate_workaround, 0),
+	seafile_OPT("buflimit",   buflimit_workaround, 1),
+	seafile_OPT("nobuflimit", buflimit_workaround, 0),
+	seafile_OPT("fstat",      fstat_workaround, 1),
+	seafile_OPT("nofstat",    fstat_workaround, 0),
+	seafile_OPT("createmode",   createmode_workaround, 1),
+	seafile_OPT("nocreatemode", createmode_workaround, 0),
 	FUSE_OPT_END
 };
 
 #define DEBUG(format, args...)						\
-	do { if (sshfs.debug) fprintf(stderr, format, args); } while(0)
+	do { if (seafile.debug) fprintf(stderr, format, args); } while(0)
 
 static const char *type_name(uint8_t type)
 {
@@ -516,7 +517,7 @@ static const char *type_name(uint8_t type)
 	}
 }
 // struct read_req {
-// 	struct sshfs_io *sio;
+// 	struct seafile_io *sio;
 // 	struct list_head list;
 // 	struct buffer data;
 // 	size_t size;
@@ -529,7 +530,7 @@ static const char *type_name(uint8_t type)
 // 	int refs;
 // 	long modifver;
 // 	struct list_head reqs;
-// 	struct sshfs_io sio;
+// 	struct seafile_io sio;
 // };
 #define container_of(ptr, type, member) ({				\
 			const typeof( ((type *)0)->member ) *__mptr = (ptr); \
@@ -577,7 +578,7 @@ static inline int translate_id(uint32_t *id, GHashTable *map)
 		*id = GPOINTER_TO_UINT(id_p);
 		return 0;
 	}
-	switch (sshfs.nomap) {
+	switch (seafile.nomap) {
 	case NOMAP_ERROR: return -1;
 	case NOMAP_IGNORE: return 0;
 	default:
@@ -591,7 +592,7 @@ static inline void buf_init(struct buffer *buf, size_t size)
 	if (size) {
 		buf->p = (uint8_t *) malloc(size);
 		if (!buf->p) {
-			fprintf(stderr, "sshfs: memory allocation failed\n");
+			fprintf(stderr, "seafile: memory allocation failed\n");
 			abort();
 		}
 	} else
@@ -621,7 +622,7 @@ static void buf_resize(struct buffer *buf, size_t len)
 	buf->size = (buf->len + len + 63) & ~31;
 	buf->p = (uint8_t *) realloc(buf->p, buf->size);
 	if (!buf->p) {
-		fprintf(stderr, "sshfs: memory allocation failed\n");
+		fprintf(stderr, "seafile: memory allocation failed\n");
 		abort();
 	}
 }
@@ -684,19 +685,19 @@ static inline void buf_add_path(struct buffer *buf, const char *path)
 {
 	char *realpath;
 
-	if (sshfs.base_path[0]) {
+	if (seafile.base_path[0]) {
 		if (path[1]) {
-			if (sshfs.base_path[strlen(sshfs.base_path)-1] != '/') {
+			if (seafile.base_path[strlen(seafile.base_path)-1] != '/') {
 				realpath = g_strdup_printf("%s/%s",
-							   sshfs.base_path,
+							   seafile.base_path,
 							   path + 1);
 			} else {
 				realpath = g_strdup_printf("%s%s",
-							   sshfs.base_path,
+							   seafile.base_path,
 							   path + 1);
 			}
 		} else {
-			realpath = g_strdup(sshfs.base_path);
+			realpath = g_strdup(seafile.base_path);
 		}
 	} else {
 		if (path[1])
@@ -779,17 +780,17 @@ static inline int buf_get_string(struct buffer *buf, char **str)
 }
 //这个函数可以大体看出如何根据远程信息修改本地inode。
 //为什么没有inode号
-static int buf_get_attrs(struct sshfs_file *sf, struct stat *stbuf, int *flagsp)
+static int buf_get_attrs(struct seafile_inode *sf, struct stat *stbuf, int *flagsp)
 {
 
 	memset(stbuf, 0, sizeof(struct stat));
 	stbuf->st_mode = sf->mode;
 	stbuf->st_nlink = 1;
 	stbuf->st_size = sf->size;
-	if (sshfs.blksize) {
-		stbuf->st_blksize = sshfs.blksize;
-		stbuf->st_blocks = ((size + sshfs.blksize - 1) &
-			~((unsigned long long) sshfs.blksize - 1)) >> 9;
+	if (seafile.blksize) {
+		stbuf->st_blksize = seafile.blksize;
+		stbuf->st_blocks = ((size + seafile.blksize - 1) &
+			~((unsigned long long) seafile.blksize - 1)) >> 9;
 	}
 	stbuf->st_uid = sf->uid;
 	stbuf->st_gid = sf->gid;
@@ -893,7 +894,7 @@ static int buf_get_entries(struct buffer *buf, void *dbuf,
 			free(longname);//为什么要立刻free掉？
 			err = buf_get_attrs(buf, &stbuf, NULL);
 			if (!err) {
-				if (sshfs.follow_symlinks &&
+				if (seafile.follow_symlinks &&
 				    S_ISLNK(stbuf.st_mode)) {
 					stbuf.st_mode = 0;
 				}
@@ -909,7 +910,7 @@ static int buf_get_entries(struct buffer *buf, void *dbuf,
 
 static void ssh_add_arg(const char *arg)
 {
-	if (fuse_opt_add_arg(&sshfs.ssh_args, arg) == -1)
+	if (fuse_opt_add_arg(&seafile.ssh_args, arg) == -1)
 		_exit(1);
 }
 // 相关函数：readdir, write, fcntl, close, lseek, readlink, fread
@@ -935,9 +936,9 @@ static int pty_expect_loop(void)
 	while (1) {
 		struct pollfd fds[2];
 
-		fds[0].fd = sshfs.rfd;
+		fds[0].fd = seafile.rfd;
 		fds[0].events = POLLIN;
-		fds[1].fd = sshfs.ptyfd;
+		fds[1].fd = seafile.ptyfd;
 		fds[1].events = POLLIN;
 		res = poll(fds, 2, timeout);
 		if (res == -1) {
@@ -958,7 +959,7 @@ static int pty_expect_loop(void)
 			break;
 		}
 
-		res = read(sshfs.ptyfd, &c, 1);
+		res = read(seafile.ptyfd, &c, 1);
 		if (res == -1) {
 			perror("read");
 			return -1;
@@ -971,20 +972,20 @@ static int pty_expect_loop(void)
 		len++;
 		if (len == passwd_len) {
 			if (memcmp(buf, passwd_str, passwd_len) == 0) {
-				write(sshfs.ptyfd, sshfs.password,
-				      strlen(sshfs.password));
+				write(seafile.ptyfd, seafile.password,
+				      strlen(seafile.password));
 			}
 			memmove(buf, buf + 1, passwd_len - 1);
 			len--;
 		}
 	}
 
-	if (!sshfs.reconnect) {
+	if (!seafile.reconnect) {
 		size_t size = getpagesize();
 
-		memset(sshfs.password, 0, size);
-		munmap(sshfs.password, size);
-		sshfs.password = NULL;
+		memset(seafile.password, 0, size);
+		munmap(seafile.password, size);
+		seafile.password = NULL;
 	}
 
 	return 0;
@@ -1020,7 +1021,7 @@ static void replace_arg(char **argp, const char *newarg)
 // strdup()在内部调用了malloc()为变量分配内存，不需要使用返回的字符串时，
 // 需要用free()释放相应的内存空间，否则会造成内存泄漏。
 	if (*argp == NULL) {
-		fprintf(stderr, "sshfs: memory allocation failed\n");
+		fprintf(stderr, "seafile: memory allocation failed\n");
 		abort();
 	}
 }
@@ -1031,14 +1032,14 @@ static int start_ssh(void)
 	int sockpair[2];
 	int pid;
 
-	if (sshfs.password_stdin) {
+	if (seafile.password_stdin) {
 
-		sshfs.ptyfd = pty_master(&ptyname);
-		if (sshfs.ptyfd == -1)
+		seafile.ptyfd = pty_master(&ptyname);
+		if (seafile.ptyfd == -1)
 			return -1;
 
-		sshfs.ptyslavefd = open(ptyname, O_RDWR | O_NOCTTY);
-		if (sshfs.ptyslavefd == -1)
+		seafile.ptyslavefd = open(ptyname, O_RDWR | O_NOCTTY);
+		if (seafile.ptyslavefd == -1)
 			return -1;
 	}
 
@@ -1046,8 +1047,8 @@ static int start_ssh(void)
 		perror("failed to create socket pair");
 		return -1;
 	}
-	sshfs.rfd = sockpair[0];
-	sshfs.wfd = sockpair[0];
+	seafile.rfd = sockpair[0];
+	seafile.wfd = sockpair[0];
 
 	pid = fork();
 // 	pid_t fork( void);
@@ -1066,7 +1067,7 @@ static int start_ssh(void)
 			perror("failed to redirect input/output");
 			_exit(1);
 		}
-		if (!sshfs.verbose && !sshfs.foreground && devnull != -1)
+		if (!seafile.verbose && !seafile.foreground && devnull != -1)
 			dup2(devnull, 2);
 
 		close(devnull);
@@ -1084,7 +1085,7 @@ static int start_ssh(void)
 		}
 		chdir("/");//更换当前工作目录
 
-		if (sshfs.password_stdin) {
+		if (seafile.password_stdin) {
 			int sfd;
 
 			setsid();
@@ -1094,23 +1095,23 @@ static int start_ssh(void)
 				_exit(1);
 			}
 			close(sfd);
-			close(sshfs.ptyslavefd);
-			close(sshfs.ptyfd);
+			close(seafile.ptyslavefd);
+			close(seafile.ptyfd);
 		}
 
-		if (sshfs.debug) {
+		if (seafile.debug) {
 			int i;
 
 			fprintf(stderr, "executing");
-			for (i = 0; i < sshfs.ssh_args.argc; i++)
+			for (i = 0; i < seafile.ssh_args.argc; i++)
 				fprintf(stderr, " <%s>",
-					sshfs.ssh_args.argv[i]);
+					seafile.ssh_args.argv[i]);
 			fprintf(stderr, "\n");
 		}
 
-		execvp(sshfs.ssh_args.argv[0], sshfs.ssh_args.argv);
+		execvp(seafile.ssh_args.argv[0], seafile.ssh_args.argv);
 		fprintf(stderr, "failed to execute '%s': %s\n",
-			sshfs.ssh_args.argv[0], strerror(errno));
+			seafile.ssh_args.argv[0], strerror(errno));
 		_exit(1);
 	}
 	waitpid(pid, NULL, 0);
@@ -1120,8 +1121,8 @@ static int start_ssh(void)
 
 static int connect_slave()
 {
-	sshfs.rfd = STDIN_FILENO;
-	sshfs.wfd = STDOUT_FILENO;
+	seafile.rfd = STDIN_FILENO;
+	seafile.wfd = STDOUT_FILENO;
 	return 0;
 }
 
@@ -1162,8 +1163,8 @@ static int connect_to(char *host, char *port)
 
 	freeaddrinfo(ai);
 
-	sshfs.rfd = sock;
-	sshfs.wfd = sock;
+	seafile.rfd = sock;
+	seafile.wfd = sock;
 	return 0;
 }
 
@@ -1179,7 +1180,7 @@ static int do_write(struct iovec *iov, size_t count)
 {
 	int res;
 	while (count) {
-		res = writev(sshfs.wfd, iov, count);
+		res = writev(seafile.wfd, iov, count);
 		// iovcnt不应超过IOV_MAX=1024，但是实际会大于这个值，所以需要多次调用writev。
 		if (res == -1) {
 			perror("write");
@@ -1248,9 +1249,9 @@ static int sftp_send_iov(uint8_t type, uint32_t id, struct iovec iov[],
 	buf_to_iov(&buf, &iovout[nout++]);
 	for (i = 0; i < count; i++)
 		iovout[nout++] = iov[i];
-	pthread_mutex_lock(&sshfs.lock_write);
+	pthread_mutex_lock(&seafile.lock_write);
 	res = do_write(iovout, nout);
-	pthread_mutex_unlock(&sshfs.lock_write);
+	pthread_mutex_unlock(&seafile.lock_write);
 	buf_free(&buf);
 	return res;
 }
@@ -1261,7 +1262,7 @@ static int do_read(struct buffer *buf)
 	uint8_t *p = buf->p;
 	size_t size = buf->size;
 	while (size) {
-		res = read(sshfs.rfd, p, size);
+		res = read(seafile.rfd, p, size);
 		if (res == -1) {
 			perror("read");
 			return -1;
@@ -1330,9 +1331,9 @@ static void chunk_put(struct read_chunk *chunk)
 
 static void chunk_put_locked(struct read_chunk *chunk)
 {
-	pthread_mutex_lock(&sshfs.lock);
+	pthread_mutex_lock(&seafile.lock);
 	chunk_put(chunk);
-	pthread_mutex_unlock(&sshfs.lock);
+	pthread_mutex_unlock(&seafile.lock);
 }
 
 static int clean_req(void *key_, struct request *req, gpointer user_data_)
@@ -1397,25 +1398,25 @@ static int process_one_request(void)
 // p pointer to extract an unsigned integer from
 
 
-	pthread_mutex_lock(&sshfs.lock);
+	pthread_mutex_lock(&seafile.lock);
 	req = (struct request *)
-		g_hash_table_lookup(sshfs.reqtab, GUINT_TO_POINTER(id));
+		g_hash_table_lookup(seafile.reqtab, GUINT_TO_POINTER(id));
 	if (req == NULL)
 		fprintf(stderr, "request %i not found\n", id);
 	else {
 		int was_over;
 
-		was_over = sshfs.outstanding_len > sshfs.max_outstanding_len;
-		sshfs.outstanding_len -= req->len;
+		was_over = seafile.outstanding_len > seafile.max_outstanding_len;
+		seafile.outstanding_len -= req->len;
 		if (was_over &&
-		    sshfs.outstanding_len <= sshfs.max_outstanding_len) {
-			pthread_cond_broadcast(&sshfs.outstanding_cond);
+		    seafile.outstanding_len <= seafile.max_outstanding_len) {
+			pthread_cond_broadcast(&seafile.outstanding_cond);
 		}
-		g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
+		g_hash_table_remove(seafile.reqtab, GUINT_TO_POINTER(id));
 	}
-	pthread_mutex_unlock(&sshfs.lock);
+	pthread_mutex_unlock(&seafile.lock);
 	if (req != NULL) {
-		if (sshfs.debug) {
+		if (seafile.debug) {
 			struct timeval now;
 			unsigned int difftime;
 			unsigned msgsize = buf.size + 5;
@@ -1426,13 +1427,13 @@ static int process_one_request(void)
 			DEBUG("  [%05i] %14s %8ubytes (%ims)\n", id,
 			      type_name(type), msgsize, difftime);
 
-			if (difftime < sshfs.min_rtt || !sshfs.num_received)
-				sshfs.min_rtt = difftime;
-			if (difftime > sshfs.max_rtt)
-				sshfs.max_rtt = difftime;
-			sshfs.total_rtt += difftime;
-			sshfs.num_received++;
-			sshfs.bytes_received += msgsize;
+			if (difftime < seafile.min_rtt || !seafile.num_received)
+				seafile.min_rtt = difftime;
+			if (difftime > seafile.max_rtt)
+				seafile.max_rtt = difftime;
+			seafile.total_rtt += difftime;
+			seafile.num_received++;
+			seafile.bytes_received += msgsize;
 		}
 		req->reply = buf;
 		req->reply_type = type;
@@ -1441,9 +1442,9 @@ static int process_one_request(void)
 			sem_post(&req->ready);
 		else {
 			if (req->end_func) {
-				pthread_mutex_lock(&sshfs.lock);
+				pthread_mutex_lock(&seafile.lock);
 				req->end_func(req);
-				pthread_mutex_unlock(&sshfs.lock);
+				pthread_mutex_unlock(&seafile.lock);
 			}
 			request_free(req);
 		}
@@ -1455,18 +1456,18 @@ static int process_one_request(void)
 
 static void close_conn(void)
 {
-	close(sshfs.rfd);
-	if (sshfs.rfd != sshfs.wfd)
-		close(sshfs.wfd);
-	sshfs.rfd = -1;
-	sshfs.wfd = -1;
-	if (sshfs.ptyfd != -1) {
-		close(sshfs.ptyfd);
-		sshfs.ptyfd = -1;
+	close(seafile.rfd);
+	if (seafile.rfd != seafile.wfd)
+		close(seafile.wfd);
+	seafile.rfd = -1;
+	seafile.wfd = -1;
+	if (seafile.ptyfd != -1) {
+		close(seafile.ptyfd);
+		seafile.ptyfd = -1;
 	}
-	if (sshfs.ptyslavefd != -1) {
-		close(sshfs.ptyslavefd);
-		sshfs.ptyslavefd = -1;
+	if (seafile.ptyslavefd != -1) {
+		close(seafile.ptyslavefd);
+		seafile.ptyslavefd = -1;
 	}
 }
 
@@ -1479,16 +1480,16 @@ static void *process_requests(void *data_)
 			break;
 	}
 
-	pthread_mutex_lock(&sshfs.lock);
-	sshfs.processing_thread_started = 0;
+	pthread_mutex_lock(&seafile.lock);
+	seafile.processing_thread_started = 0;
 	close_conn();
-	g_hash_table_foreach_remove(sshfs.reqtab, (GHRFunc) clean_req, NULL);
-	sshfs.connver ++;
-	sshfs.outstanding_len = 0;
-	pthread_cond_broadcast(&sshfs.outstanding_cond);
-	pthread_mutex_unlock(&sshfs.lock);
+	g_hash_table_foreach_remove(seafile.reqtab, (GHRFunc) clean_req, NULL);
+	seafile.connver ++;
+	seafile.outstanding_len = 0;
+	pthread_cond_broadcast(&seafile.outstanding_cond);
+	pthread_mutex_unlock(&seafile.lock);
 
-	if (!sshfs.reconnect) {
+	if (!seafile.reconnect) {
 		/* harakiri */
 		kill(getpid(), SIGTERM);
 	}
@@ -1540,18 +1541,18 @@ static int sftp_init_reply_ok(struct buffer *buf, uint32_t *version)
 
 			if (strcmp(ext, SFTP_EXT_POSIX_RENAME) == 0 &&
 			    strcmp(extdata, "1") == 0) {
-				sshfs.ext_posix_rename = 1;
-				sshfs.rename_workaround = 0;
+				seafile.ext_posix_rename = 1;
+				seafile.rename_workaround = 0;
 			}
 			if (strcmp(ext, SFTP_EXT_STATVFS) == 0 &&
 			    strcmp(extdata, "2") == 0)
-				sshfs.ext_statvfs = 1;
+				seafile.ext_statvfs = 1;
 			if (strcmp(ext, SFTP_EXT_HARDLINK) == 0 &&
 			    strcmp(extdata, "1") == 0)
-				sshfs.ext_hardlink = 1;
+				seafile.ext_hardlink = 1;
 			if (strcmp(ext, SFTP_EXT_FSYNC) == 0 &&
 			    strcmp(extdata, "1") == 0)
-				sshfs.ext_fsync = 1;
+				seafile.ext_fsync = 1;
 		} while (buf2.len < buf2.size);
 		buf_free(&buf2);
 	}
@@ -1593,13 +1594,13 @@ static int sftp_init()
 	if (sftp_send_iov(SSH_FXP_INIT, PROTO_VERSION, NULL, 0) == -1)
 		goto out;
 
-	if (sshfs.password_stdin && pty_expect_loop() == -1)
+	if (seafile.password_stdin && pty_expect_loop() == -1)
 		goto out;
 
 	if (sftp_find_init_reply(&version) == -1)
 		goto out;
 
-	sshfs.server_version = version;
+	seafile.server_version = version;
 	if (version > PROTO_VERSION) {
 		fprintf(stderr,
 			"Warning: server uses version: %i, we support: %i\n",
@@ -1669,15 +1670,15 @@ static void sftp_detect_uid()
 	if (!(flags & SSH_FILEXFER_ATTR_UIDGID))
 		goto out;
 
-	sshfs.remote_uid = stbuf.st_uid;
-	sshfs.local_uid = getuid();
-	sshfs.remote_gid = stbuf.st_gid;
-	sshfs.local_gid = getgid();
-	sshfs.remote_uid_detected = 1;
-	DEBUG("remote_uid = %i\n", sshfs.remote_uid);
+	seafile.remote_uid = stbuf.st_uid;
+	seafile.local_uid = getuid();
+	seafile.remote_gid = stbuf.st_gid;
+	seafile.local_gid = getgid();
+	seafile.remote_uid_detected = 1;
+	DEBUG("remote_uid = %i\n", seafile.remote_uid);
 
 out:
-	if (!sshfs.remote_uid_detected)
+	if (!seafile.remote_uid_detected)
 		fprintf(stderr, "failed to detect remote user ID\n");
 
 	buf_free(&buf);
@@ -1718,7 +1719,7 @@ static int sftp_check_root(const char *base_path)
 		if (buf_get_uint32(&buf, &serr) == -1)
 			goto out;
 
-		fprintf(stderr, "%s:%s: %s\n", sshfs.host, remote_dir,
+		fprintf(stderr, "%s:%s: %s\n", seafile.host, remote_dir,
 			strerror(sftp_error_to_errno(serr)));
 
 		goto out;
@@ -1734,7 +1735,7 @@ static int sftp_check_root(const char *base_path)
 		goto out;
 
 	if (!S_ISDIR(stbuf.st_mode)) {
-		fprintf(stderr, "%s:%s: Not a directory\n", sshfs.host,
+		fprintf(stderr, "%s:%s: Not a directory\n", seafile.host,
 			remote_dir);
 		goto out;
 	}
@@ -1750,10 +1751,10 @@ static int connect_remote(void)
 {
 	int err;
 
-	if (sshfs.slave)
+	if (seafile.slave)
 		err = connect_slave();
-	else if (sshfs.directport)
-		err = connect_to(sshfs.host, sshfs.directport);
+	else if (seafile.directport)
+		err = connect_to(seafile.host, seafile.directport);
 	else
 		err = start_ssh();
 	if (!err)
@@ -1762,7 +1763,7 @@ static int connect_remote(void)
 	if (err)
 		close_conn();
 	else
-		sshfs.num_connect++;
+		seafile.num_connect++;
 
 	return err;
 }
@@ -1774,18 +1775,18 @@ static int start_processing_thread(void)
 	sigset_t oldset;
 	sigset_t newset;
 
-	if (sshfs.processing_thread_started)
+	if (seafile.processing_thread_started)
 		return 0;
 
-	if (sshfs.rfd == -1) {
+	if (seafile.rfd == -1) {
 		err = connect_remote();
 		if (err)
 			return -EIO;
 	}
 
-	if (sshfs.detect_uid) {
+	if (seafile.detect_uid) {
 		sftp_detect_uid();
-		sshfs.detect_uid = 0;
+		seafile.detect_uid = 0;
 	}
 
 	sigemptyset(&newset);
@@ -1801,24 +1802,24 @@ static int start_processing_thread(void)
 	}
 	pthread_detach(thread_id);
 	pthread_sigmask(SIG_SETMASK, &oldset, NULL);
-	sshfs.processing_thread_started = 1;
+	seafile.processing_thread_started = 1;
 	return 0;
 }
 
-static void *sshfs_init(struct fuse_conn_info *conn,
+static void *seafile_init(struct fuse_conn_info *conn,
                         struct fuse_config *cfg)
 {
-	/* Readahead should be done by kernel or sshfs but not both */
+	/* Readahead should be done by kernel or seafile but not both */
 	if (conn->capable & FUSE_CAP_ASYNC_READ)
-		sshfs.sync_read = 1;
+		seafile.sync_read = 1;
 
 	// These workarounds require the "path" argument.
-        cfg->nullpath_ok = ~(sshfs.truncate_workaround || sshfs.fstat_workaround);
+        cfg->nullpath_ok = ~(seafile.truncate_workaround || seafile.fstat_workaround);
 
         // Lookup of . and .. is supported
         conn->capable |= FUSE_CAP_EXPORT_SUPPORT;
 
-	if (!sshfs.delay_connect)
+	if (!seafile.delay_connect)
 		start_processing_thread();
 
 	// SFTP only supports 1-second time resolution
@@ -1885,9 +1886,9 @@ static int sftp_request_wait(struct request *req, uint8_t type,
 
 out:
 	if (req->end_func) {
-		pthread_mutex_lock(&sshfs.lock);
+		pthread_mutex_lock(&seafile.lock);
 		req->end_func(req);
-		pthread_mutex_unlock(&sshfs.lock);
+		pthread_mutex_unlock(&seafile.lock);
 	}
 	request_free(req);
 	return err;
@@ -1907,37 +1908,37 @@ static int sftp_request_send(uint8_t type, struct iovec *iov, size_t count,
 	req->data = data;
 	sem_init(&req->ready, 0, 0);
 	buf_init(&req->reply, 0);
-	pthread_mutex_lock(&sshfs.lock);
+	pthread_mutex_lock(&seafile.lock);
 	if (begin_func)
 		begin_func(req);
 	id = sftp_get_id();
 	req->id = id;
 	err = start_processing_thread();
 	if (err) {
-		pthread_mutex_unlock(&sshfs.lock);
+		pthread_mutex_unlock(&seafile.lock);
 		goto out;
 	}
 	req->len = iov_length(iov, count) + 9;
-	sshfs.outstanding_len += req->len;
-	while (sshfs.outstanding_len > sshfs.max_outstanding_len)
-		pthread_cond_wait(&sshfs.outstanding_cond, &sshfs.lock);
+	seafile.outstanding_len += req->len;
+	while (seafile.outstanding_len > seafile.max_outstanding_len)
+		pthread_cond_wait(&seafile.outstanding_cond, &seafile.lock);
 
-	g_hash_table_insert(sshfs.reqtab, GUINT_TO_POINTER(id), req);
-	if (sshfs.debug) {
+	g_hash_table_insert(seafile.reqtab, GUINT_TO_POINTER(id), req);
+	if (seafile.debug) {
 		gettimeofday(&req->start, NULL);
-		sshfs.num_sent++;
-		sshfs.bytes_sent += req->len;
+		seafile.num_sent++;
+		seafile.bytes_sent += req->len;
 	}
 	DEBUG("[%05i] %s\n", id, type_name(type));
-	pthread_mutex_unlock(&sshfs.lock);
+	pthread_mutex_unlock(&seafile.lock);
 
 	err = -EIO;
 	if (sftp_send_iov(type, id, iov, count) == -1) {
 		gboolean rmed;
 
-		pthread_mutex_lock(&sshfs.lock);
-		rmed = g_hash_table_remove(sshfs.reqtab, GUINT_TO_POINTER(id));
-		pthread_mutex_unlock(&sshfs.lock);
+		pthread_mutex_lock(&seafile.lock);
+		rmed = g_hash_table_remove(seafile.reqtab, GUINT_TO_POINTER(id));
+		pthread_mutex_unlock(&seafile.lock);
 
 		if (!rmed && !want_reply) {
 			/* request already freed */
@@ -1983,13 +1984,13 @@ static int sftp_request(uint8_t type, const struct buffer *buf,
 	return sftp_request_iov(type, &iov, 1, expect_type, outbuf);
 }
 
-static int sshfs_access(const char *path, int mask)
+static int seafile_access(const char *path, int mask)
 {
 	struct stat stbuf;
 	int err = 0;
 
 	if (mask ) {
-		err = sshfs.op->getattr(path, &stbuf, NULL);
+		err = seafile.op->getattr(path, &stbuf, NULL);
 		if (!err) {
 			if (S_ISREG(stbuf.st_mode) &&
 			    !(stbuf.st_mode & (S_IXUSR|S_IXGRP|S_IXOTH)))
@@ -2027,7 +2028,7 @@ static void strip_common(const char **sp, const char **tp)
 static void transform_symlink(const char *path, char **linkp)
 {
 	const char *l = *linkp;
-	const char *b = sshfs.base_path;
+	const char *b = seafile.base_path;
 	char *newlink;
 	char *s;
 	int dotdots;
@@ -2048,7 +2049,7 @@ static void transform_symlink(const char *path, char **linkp)
 
 	newlink = malloc(dotdots * 3 + strlen(l) + 2);
 	if (!newlink) {
-		fprintf(stderr, "sshfs: memory allocation failed\n");
+		fprintf(stderr, "seafile: memory allocation failed\n");
 		abort();
 	}
 	for (s = newlink, i = 0; i < dotdots; i++, s += 3)
@@ -2065,7 +2066,7 @@ static void transform_symlink(const char *path, char **linkp)
 	*linkp = newlink;
 }
 
-static int sshfs_readlink(const char *path, char *linkbuf, size_t size)
+static int seafile_readlink(const char *path, char *linkbuf, size_t size)
 {
 	int err;
 	struct buffer buf;
@@ -2073,7 +2074,7 @@ static int sshfs_readlink(const char *path, char *linkbuf, size_t size)
 
 	assert(size > 0);
 
-	if (sshfs.server_version < 3)
+	if (seafile.server_version < 3)
 		return -EPERM;
 
 	buf_init(&buf, 0);
@@ -2085,7 +2086,7 @@ static int sshfs_readlink(const char *path, char *linkbuf, size_t size)
 		err = -EIO;
 		if(buf_get_uint32(&name, &count) != -1 && count == 1 &&
 		   buf_get_string(&name, &link) != -1) {
-			if (sshfs.transform_symlinks)
+			if (seafile.transform_symlinks)
 				transform_symlink(path, &link);
 			strncpy(linkbuf, link, size - 1);
 			linkbuf[size - 1] = '\0';
@@ -2107,9 +2108,9 @@ static int sftp_readdir_send(struct request **req, struct buffer *handle)
 				 SSH_FXP_NAME, NULL, req);
 }
 
-static int sshfs_req_pending(struct request *req)
+static int seafile_req_pending(struct request *req)
 {
-	if (g_hash_table_lookup(sshfs.reqtab, GUINT_TO_POINTER(req->id)))
+	if (g_hash_table_lookup(seafile.reqtab, GUINT_TO_POINTER(req->id)))
 		return 1;
 	else
 		return 0;
@@ -2157,11 +2158,11 @@ static int sftp_readdir_async(struct buffer *handle, void *buf, off_t offset,
 				   thread may free req right after unlock() if
 				   want_reply == 0 */
 				int want_reply;
-				pthread_mutex_lock(&sshfs.lock);
-				if (sshfs_req_pending(req))
+				pthread_mutex_lock(&seafile.lock);
+				if (seafile_req_pending(req))
 					req->want_reply = 0;
 				want_reply = req->want_reply;
-				pthread_mutex_unlock(&sshfs.lock);
+				pthread_mutex_unlock(&seafile.lock);
 				if (!want_reply)
 					continue;
 			}
@@ -2215,14 +2216,14 @@ struct manifest_content{
 	char* name = new char[NAME_MAX];
 	char* eid = new char[20];
 };
-struct sshfs_dirp {
+struct seafile_dirp {
 	struct manifest_content* mc;
-	struct sshfs_dirent *entry;
+	struct seafile_dirent *entry;
 	off_t offset;
 	size_t eid_nums;
 
 };
-struct sshfs_dirent
+struct seafile_dirent
 {
 	char* inode_id; /* inode number 索引节点号 */
 	off_t d_off; /* offset to this dirent 在目录文件中的偏移 */
@@ -2230,13 +2231,18 @@ struct sshfs_dirent
 	unsigned char d_type; /* the type of d_name 文件类型 */
 	char d_name [NAME_MAX+1]; /* file name (null-terminated) 文件名，最长255字符 */
 }
+static int change_path_to_eid(const char *path,char eid[20]){
 
-static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
+	strcpy(eid,"10011");//随便计算一个eid
+	return 1;
+
+}
+static int seafile_opendir(const char *path, struct fuse_file_info *fi)
 {
 	int err;
 	struct buffer buf;
 	struct buffer *handle;
-	handle = malloc(sizeof(struct buffer));
+	handle = (struct buffer *)malloc(sizeof(struct buffer));
 	if(handle == NULL)
 		return -ENOMEM;
 
@@ -2247,11 +2253,12 @@ static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
 	char* inode_eid = new char[20];
 	change_path_to_eid(&buf,inode_eid);
 
-	struct sshfs_file * inode_content = malloc(sizeof(struct sshfs_file));
+	struct seafile_inode * inode_content =(struct seafile_inode *) 
+	malloc(sizeof(struct seafile_inode));
 	Seanetfs_getfile(inode_eid,(char*)inode_content);
 
-	struct sshfs_dirp *sd = new struct sshfs_dirp;
-	sd->mc = malloc(sizeof(manifest_content) *inode_content->size );
+	struct seafile_dirp *sd = (struct seafile_dirp *)malloc(sizeof(struct seafile_dirp));
+	sd->mc = (struct manifest_content*)malloc(sizeof(manifest_content) *inode_content->size );
 	Seanetfs_getfile(inode_content->root_manifest_eid,(char*)sd->mc)
 	sd->eid_nums = inode_content->size;
 	sd->offset = 0;
@@ -2263,14 +2270,14 @@ static int sshfs_opendir(const char *path, struct fuse_file_info *fi)
 	return 0;
 }
 
-static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
+static int seafile_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
 			 off_t offset, struct fuse_file_info *fi,
 			 enum fuse_readdir_flags flags)
 {
 	(void) path; (void) flags;
 	int err;
-	struct sshfs_dirp *sd;
-	sd = (struct sshfs_dirp *)(uintptr_t)fi->fh;
+	struct seafile_dirp *sd;
+	sd = (struct seafile_dirp *)(uintptr_t)fi->fh;
 
 	sd->entry = NULL;
 	sd->offset = offset;
@@ -2282,19 +2289,20 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
 		struct stat st;
 		off_t nextoff;
 		enum fuse_fill_dir_flags fill_flags = 0;
-		char* current_dir_eid = malloc(sizeof(char[20]));
+		char* current_dir_eid = (char* current_dir_eid)malloc(sizeof(char[20]));
 		strncpy(current_dir_eid,sd->eids+sd->offset*20,20);
 
 		if (!sd->entry) {
-			// struct sshfs_file* sf = new struct sshfs_file;	
+			// struct seafile_inode* sf = new struct seafile_inode;	
 			// Seanetfs_getfile(current_dir_eid,(char*)sf);
-			sd->entry = (struct sshfs_dirent *)malloc(sizeof(struct sshfs_dirent));
+			sd->entry = (struct seafile_dirent *)malloc(sizeof(struct seafile_dirent));
 			sd->entry->inode_id = current_dir_eid;
 			sd->entry->d_name = sd->mc[offset]->name; 
 		}
 		
-//		struct sshfs_file * temp_inode = malloc(sizeof(struct sshfs_file));
-		struct sshfs_file *temp_inode;
+		struct seafile_inode * temp_inode = (struct seafile_inode *)
+													malloc(sizeof(struct seafile_inode));
+
 		
 	
 		Seanetfs_getfile(sd->entry->inode_id,(char*)temp_inode);
@@ -2319,18 +2327,18 @@ static int sshfs_readdir(const char *path, void *dbuf, fuse_fill_dir_t filler,
 		}
 	return 0;
 }
-static int sshfs_releasedir(const char *path, struct fuse_file_info *fi)
+static int seafile_releasedir(const char *path, struct fuse_file_info *fi)
 {
 	(void) path;
 	int err;
-	struct sshfs_dirp * sd;
-	sd = (struct sshfs_dirp *)(uintptr_t)fi->fh;
+	struct seafile_dirp * sd;
+	sd = (struct seafile_dirp *)(uintptr_t)fi->fh;
 	free(sd);
 	return err;
 }
 
 
-static int sshfs_mkdir(const char *path, mode_t mode)
+static int seafile_mkdir(const char *path, mode_t mode)
 {
 	int err;
 	struct buffer buf;
@@ -2343,37 +2351,7 @@ static int sshfs_mkdir(const char *path, mode_t mode)
 	return err;
 }
 
-
-static int sshfs_symlink(const char *from, const char *to)
-{
-	int err;
-	struct buffer buf;
-
-	if (sshfs.server_version < 3)
-		return -EPERM;
-
-	/* openssh sftp server doesn't follow standard: link target and
-	   link name are mixed up, so we must also be non-standard :( */
-	buf_init(&buf, 0);
-	buf_add_string(&buf, from);
-	buf_add_path(&buf, to);
-	err = sftp_request(SSH_FXP_SYMLINK, &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-	return err;
-}
-
-static int sshfs_unlink(const char *path)
-{
-	int err;
-	struct buffer buf;
-	buf_init(&buf, 0);
-	buf_add_path(&buf, path);
-	err = sftp_request(SSH_FXP_REMOVE, &buf, SSH_FXP_STATUS, NULL);
-	buf_free(&buf);
-	return err;
-}
-
-static int sshfs_rmdir(const char *path)
+static int seafile_rmdir(const char *path)
 {
 	int err;
 	struct buffer buf;
@@ -2384,267 +2362,164 @@ static int sshfs_rmdir(const char *path)
 	return err;
 }
 
-
-static void random_string(char *str, int length)
-{
-	int i;
-	for (i = 0; i < length; i++)
-		*str++ = (char)('0' + rand_r(&sshfs.randseed) % 10);
-	*str = '\0';
-}
-
-static int sshfs_rename(const char *from, const char *to, unsigned int flags)
+static int seafile_rename(const char *from, const char *to, unsigned int flags)
 {
 	int err;
 
 	if(flags != 0)
 		return -EINVAL;
 	
-	if (sshfs.ext_posix_rename)
-		err = sshfs_ext_posix_rename(from, to);
+	if (seafile.ext_posix_rename)
+		err = seafile_ext_posix_rename(from, to);
 	else
-		err = sshfs_do_rename(from, to);
-	if (err == -EPERM && sshfs.rename_workaround) {
+		err = seafile_do_rename(from, to);
+	if (err == -EPERM && seafile.rename_workaround) {
 		size_t tolen = strlen(to);
 		if (tolen + RENAME_TEMP_CHARS < PATH_MAX) {
 			int tmperr;
 			char totmp[PATH_MAX];
 			strcpy(totmp, to);
 			random_string(totmp + tolen, RENAME_TEMP_CHARS);
-			tmperr = sshfs_do_rename(to, totmp);
+			tmperr = seafile_do_rename(to, totmp);
 			if (!tmperr) {
-				err = sshfs_do_rename(from, to);
+				err = seafile_do_rename(from, to);
 				if (!err)
-					err = sshfs_unlink(totmp);
+					err = seafile_unlink(totmp);
 				else
-					sshfs_do_rename(totmp, to);
+					seafile_do_rename(totmp, to);
 			}
 		}
 	}
-	if (err == -EPERM && sshfs.renamexdev_workaround)
+	if (err == -EPERM && seafile.renamexdev_workaround)
 		err = -EXDEV;
 	return err;
 }
 
-static int sshfs_link(const char *from, const char *to)
+static inline struct seafile_inode *get_seafile_inode(struct fuse_file_info *fi)
 {
-	int err = -ENOSYS;
-
-	if (sshfs.ext_hardlink && !sshfs.disable_hardlink) {
-		struct buffer buf;
-
-		buf_init(&buf, 0);
-		buf_add_string(&buf, SFTP_EXT_HARDLINK);
-		buf_add_path(&buf, from);
-		buf_add_path(&buf, to);
-		err = sftp_request(SSH_FXP_EXTENDED, &buf, SSH_FXP_STATUS,
-				   NULL);
-		buf_free(&buf);
-	}
-
-	return err;
+	return (struct seafile_inode *) (uintptr_t) fi->fh;
 }
 
-
-static inline struct sshfs_file *get_sshfs_file(struct fuse_file_info *fi)
+struct context{
+	char ** eid_list;
+	int chunk_offset;//chunk 起始点 
+	int chunk_nums;//本次操作的chunk数量 
+	
+};
+//open 根据path 获取到file的inode 
+static int seafile_open(const char *path, struct fuse_file_info *fi)
 {
-	return (struct sshfs_file *) (uintptr_t) fi->fh;
+	char* inode_eid = new char[20];
+	change_path_to_eid(path,inode_eid);
+	int res;
+	struct seafile_inode * si = (struct seafile_inode *)malloc(sizeof(struct seafile_inode));
+	res = Seanetfs_getfile(inode_eid,(char*)si);
+
+	if(res == 0) return 0;
+	struct context * ctx = (struct context*)malloc(sizeof(struct context ctx));
+	Seanetfs_init_context(si->root_manifest_eid,ctx);
+	si->ctx = ctx;
+	fi->fh = (unsigned long) si;
+	return 1;
+	 
 }
 
-
-//static int sshfs_open_common(const char *path, mode_t mode,
-//                             struct fuse_file_info *fi)
-//{
-//	int err;
-//	int err2;
-//	struct buffer buf;
-//	struct buffer outbuf;
-//	struct stat stbuf;
-//	struct sshfs_file *sf;
-//	struct request *open_req;
-//	uint32_t pflags = 0;
-//	struct iovec iov;
-//	uint8_t type;
-//	uint64_t wrctr = 0;
-//
-//	if (sshfs.dir_cache)
-//		wrctr = cache_get_write_ctr();
-//
-//  if (sshfs.direct_io)
-//    fi->direct_io = 1;
-//
-//	if ((fi->flags & O_ACCMODE) == O_RDONLY)
-//		pflags = SSH_FXF_READ;
-//	else if((fi->flags & O_ACCMODE) == O_WRONLY)
-//		pflags = SSH_FXF_WRITE;
-//	else if ((fi->flags & O_ACCMODE) == O_RDWR)
-//		pflags = SSH_FXF_READ | SSH_FXF_WRITE;
-//	else
-//		return -EINVAL;
-//
-//	if (fi->flags & O_CREAT)
-//		pflags |= SSH_FXF_CREAT;
-//
-//	if (fi->flags & O_EXCL)
-//		pflags |= SSH_FXF_EXCL;
-//
-//	if (fi->flags & O_TRUNC)
-//		pflags |= SSH_FXF_TRUNC;
-//
-//	if (fi->flags & O_APPEND)
-//		pflags |= SSH_FXF_APPEND;
-//	
-//	sf = g_new0(struct sshfs_file, 1);
-//	list_init(&sf->write_reqs);
-//	pthread_cond_init(&sf->write_finished, NULL);
-//	/* Assume random read after open */
-//	sf->is_seq = 0;
-//	sf->refs = 1;
-//	sf->next_pos = 0;
-//	pthread_mutex_lock(&sshfs.lock);
-//	sf->modifver= sshfs.modifver;
-//	sf->connver = sshfs.connver;
-//	pthread_mutex_unlock(&sshfs.lock);
-//	buf_init(&buf, 0);
-//	buf_add_path(&buf, path);
-//	buf_add_uint32(&buf, pflags);
-//	buf_add_uint32(&buf, SSH_FILEXFER_ATTR_PERMISSIONS);
-//	buf_add_uint32(&buf, mode);
-//	buf_to_iov(&buf, &iov);
-//	sftp_request_send(SSH_FXP_OPEN, &iov, 1, NULL, NULL, 1, NULL,
-//			  &open_req);
-//	buf_clear(&buf);
-//	buf_add_path(&buf, path);
-//	type = sshfs.follow_symlinks ? SSH_FXP_STAT : SSH_FXP_LSTAT;
-//	err2 = sftp_request(type, &buf, SSH_FXP_ATTRS, &outbuf);
-//	if (!err2) {
-//		err2 = buf_get_attrs(&outbuf, &stbuf, NULL);
-//		buf_free(&outbuf);
-//	}
-//	err = sftp_request_wait(open_req, SSH_FXP_OPEN, SSH_FXP_HANDLE,
-//				&sf->handle);
-//	if (!err && err2) {
-//		buf_finish(&sf->handle);
-//		sftp_request(SSH_FXP_CLOSE, &sf->handle, 0, NULL);
-//		buf_free(&sf->handle);
-//		err = err2;
-//	}
-//
-//	if (!err) {
-//		if (sshfs.dir_cache)
-//			cache_add_attr(path, &stbuf, wrctr);
-//		buf_finish(&sf->handle);
-//		fi->fh = (unsigned long) sf;
-//	} else {
-//		if (sshfs.dir_cache)
-//			cache_invalidate(path);
-//		g_free(sf);
-//	}
-//	buf_free(&buf);
-//	return err;
-//}
-
-static int sshfs_open(const char *path, struct fuse_file_info *fi)
-{
-	return sshfs_open_common(path, 0, fi);
-}
-
-static int sshfs_flush(const char *path, struct fuse_file_info *fi)
+static int seafile_flush(const char *path, struct fuse_file_info *fi)
 {
 	int err;
-	struct sshfs_file *sf = get_sshfs_file(fi);
+	struct seafile_inode *sf = get_seafile_inode(fi);
 	struct list_head write_reqs;
 	struct list_head *curr_list;
 
-	if (!sshfs_file_is_conn(sf))
+	if (!seafile_file_is_conn(sf))
 		return -EIO;
 
-	if (sshfs.sync_write)
+	if (seafile.sync_write)
 		return 0;
 
 	(void) path;
-	pthread_mutex_lock(&sshfs.lock);
+	pthread_mutex_lock(&seafile.lock);
 	if (!list_empty(&sf->write_reqs)) {
 		curr_list = sf->write_reqs.prev;
 		list_del(&sf->write_reqs);
 		list_init(&sf->write_reqs);
 		list_add(&write_reqs, curr_list);
 		while (!list_empty(&write_reqs))
-			pthread_cond_wait(&sf->write_finished, &sshfs.lock);
+			pthread_cond_wait(&sf->write_finished, &seafile.lock);
 	}
 	err = sf->write_error;
 	sf->write_error = 0;
-	pthread_mutex_unlock(&sshfs.lock);
+	pthread_mutex_unlock(&seafile.lock);
 	return err;
 }
 
 
-static void sshfs_file_put(struct sshfs_file *sf)
+static void seafile_file_put(struct seafile_inode *sf)
 {
 	sf->refs--;
 	if (!sf->refs)
 		g_free(sf);
 }
 
-static void sshfs_file_get(struct sshfs_file *sf)
+static void seafile_file_get(struct seafile_inode *sf)
 {
 	sf->refs++;
 }
 
-static int sshfs_release(const char *path, struct fuse_file_info *fi)
+static int seafile_release(const char *path, struct fuse_file_info *fi)
 {
-	struct sshfs_file *sf = get_sshfs_file(fi);
+	struct seafile_inode *sf = get_seafile_inode(fi);
 	struct buffer *handle = &sf->handle;
-	if (sshfs_file_is_conn(sf)) {
-		sshfs_flush(path, fi);
+	if (seafile_file_is_conn(sf)) {
+		seafile_flush(path, fi);
 		sftp_request(SSH_FXP_CLOSE, handle, 0, NULL);
 	}
 	buf_free(handle);
 	chunk_put_locked(sf->readahead);
-	sshfs_file_put(sf);
+	seafile_file_put(sf);
 	return 0;
 }
 
 
 
-static int sshfs_read(const char *path, char *rbuf, size_t size, off_t offset,
+static int seafile_read(const char *path, char *rbuf, size_t size, off_t offset,
                       struct fuse_file_info *fi)
 {
-	struct sshfs_file *sf = get_sshfs_file(fi);
-	(void) path;
-
-	if (!sshfs_file_is_conn(sf))
-		return -EIO;
-
-	if (sshfs.sync_read)
-		return sshfs_sync_read(sf, rbuf, size, offset);
-	else
-		return sshfs_async_read(sf, rbuf, size, offset);
+	struct seafile_inode *sf = get_seafile_inode(fi);
+	int chunk_offset = int(offset/CHUNK_SIZE);
+	int chunk_num = int((offset + size)/CHUNK_SIZE) + 1 - chunk_offset;
+	
+	char * temp_content = (char *)malloc(sizeof(char)*chunk_num * CHUNK_SIZE)
+	sf->ctx->chunk_offset = chunk_offset;
+	
+	st->ctx->chunk_nums = chunk_num;
+	Seanetfs_getfile(NULL,);
+	
 }
 
 
-static int sshfs_write(const char *path, const char *wbuf, size_t size,
+static int seafile_write(const char *path, const char *wbuf, size_t size,
                        off_t offset, struct fuse_file_info *fi)
 {
 	int err;
-	struct sshfs_file *sf = get_sshfs_file(fi);
+	struct seafile_inode *sf = get_seafile_inode(fi);
 
 	(void) path;
 
-	if (!sshfs_file_is_conn(sf))
+	if (!seafile_file_is_conn(sf))
 		return -EIO;
 
-	sshfs_inc_modifver();
+	seafile_inc_modifver();
 
-	// if (!sshfs.sync_write && !sf->write_error)
-	// 	err = sshfs_async_write(sf, wbuf, size, offset);
+	// if (!seafile.sync_write && !sf->write_error)
+	// 	err = seafile_async_write(sf, wbuf, size, offset);
 	// else
-	// 	err = sshfs_sync_write(sf, wbuf, size, offset);
+	// 	err = seafile_sync_write(sf, wbuf, size, offset);
 
 	return err ? err : (int) size;
 }
 
-static int sshfs_ext_statvfs(const char *path, struct statvfs *stbuf)
+static int seafile_ext_statvfs(const char *path, struct statvfs *stbuf)
 {
 	int err;
 	struct buffer buf;
@@ -2664,13 +2539,13 @@ static int sshfs_ext_statvfs(const char *path, struct statvfs *stbuf)
 }
 
 
-static int sshfs_statfs(const char *path, struct statvfs *buf)
+static int seafile_statfs(const char *path, struct statvfs *buf)
 {
-	if (sshfs.ext_statvfs)
-		return sshfs_ext_statvfs(path, buf);
+	if (seafile.ext_statvfs)
+		return seafile_ext_statvfs(path, buf);
 
 	buf->f_namemax = 255;
-	buf->f_bsize = sshfs.blksize;
+	buf->f_bsize = seafile.blksize;
 	/*
 	 * df seems to use f_bsize instead of f_frsize, so make them
 	 * the same
@@ -2682,39 +2557,31 @@ static int sshfs_statfs(const char *path, struct statvfs *buf)
 	return 0;
 }
 
-static int sshfs_create(const char *path, mode_t mode,
+static int seafile_create(const char *path, mode_t mode,
                         struct fuse_file_info *fi)
 {
-	if (sshfs.createmode_workaround)
+	if (seafile.createmode_workaround)
 		mode = 0;
 
-	return sshfs_open_common(path, mode, fi);
+	return seafile_open_common(path, mode, fi);
 }
 
-static int change_path_to_eid(const struct buffer *buf,char eid[20]){
-	char *path
-	if(buf_get_string(buf,&path) == -1)
-		return 0;
-	else
-		strcpy(eid,"10011");//随便计算一个eid
-		return 1;
 
-}
-static int sshfs_getattr(const char *path, struct stat *stbuf,
+static int seafile_getattr(const char *path, struct stat *stbuf,
 			 struct fuse_file_info *fi)
 {
 	int err;
-	struct buffer buf;
-	struct sshfs_file *sf = NULL;
 
-	if (fi != NULL && !sshfs.fstat_workaround) {
-		sf = get_sshfs_file(fi);
+	struct seafile_inode *sf = NULL;
+
+	if (fi != NULL && !seafile.fstat_workaround) {
+		sf = get_seafile_inode(fi);
 	}
 	
-	char* inode_eid;
-	buf_init(&buf, 0);
+	char* inode_eid = new char[20];
+
 	if(sf == NULL) {
-		buf_add_path(&buf, path);
+
 		if(change_path_to_eid(buf,&inode_eid)){
 			if(Seanetfs_getfile(inode_eid,(char *)sf) == 0){
 				return -EIO
@@ -2731,25 +2598,25 @@ static int sshfs_getattr(const char *path, struct stat *stbuf,
 	return err;
 }
 
-static int sshfs_truncate_zero(const char *path)
+static int seafile_truncate_zero(const char *path)
 {
 	int err;
 	struct fuse_file_info fi;
 
 	fi.flags = O_WRONLY | O_TRUNC;
-	err = sshfs_open(path, &fi);
+	err = seafile_open(path, &fi);
 	if (!err)
-		sshfs_release(path, &fi);
+		seafile_release(path, &fi);
 
 	return err;
 }
 
 static size_t calc_buf_size(off_t size, off_t offset)
 {
-	return offset + sshfs.max_read < size ? sshfs.max_read : size - offset;
+	return offset + seafile.max_read < size ? seafile.max_read : size - offset;
 }
 
-static int sshfs_truncate_shrink(const char *path, off_t size)
+static int seafile_truncate_shrink(const char *path, off_t size)
 {
 	int res;
 	char *data;
@@ -2761,41 +2628,41 @@ static int sshfs_truncate_shrink(const char *path, off_t size)
 		return -ENOMEM;
 
 	fi.flags = O_RDONLY;
-	res = sshfs_open(path, &fi);
+	res = seafile_open(path, &fi);
 	if (res)
 		goto out;
 
 	for (offset = 0; offset < size; offset += res) {
 		size_t bufsize = calc_buf_size(size, offset);
-		res = sshfs_read(path, data + offset, bufsize, offset, &fi);
+		res = seafile_read(path, data + offset, bufsize, offset, &fi);
 		if (res <= 0)
 			break;
 	}
-	sshfs_release(path, &fi);
+	seafile_release(path, &fi);
 	if (res < 0)
 		goto out;
 
 	fi.flags = O_WRONLY | O_TRUNC;
-	res = sshfs_open(path, &fi);
+	res = seafile_open(path, &fi);
 	if (res)
 		goto out;
 
 	for (offset = 0; offset < size; offset += res) {
 		size_t bufsize = calc_buf_size(size, offset);
-		res = sshfs_write(path, data + offset, bufsize, offset, &fi);
+		res = seafile_write(path, data + offset, bufsize, offset, &fi);
 		if (res < 0)
 			break;
 	}
 	if (res >= 0)
-		res = sshfs_flush(path, &fi);
-	sshfs_release(path, &fi);
+		res = seafile_flush(path, &fi);
+	seafile_release(path, &fi);
 
 out:
 	free(data);
 	return res;
 }
 
-static int sshfs_truncate_extend(const char *path, off_t size,
+static int seafile_truncate_extend(const char *path, off_t size,
                                  struct fuse_file_info *fi)
 {
 	int res;
@@ -2805,15 +2672,15 @@ static int sshfs_truncate_extend(const char *path, off_t size,
 	if (!fi) {
 		openfi = &tmpfi;
 		openfi->flags = O_WRONLY;
-		res = sshfs_open(path, openfi);
+		res = seafile_open(path, openfi);
 		if (res)
 			return res;
 	}
-	res = sshfs_write(path, &c, 1, size - 1, openfi);
+	res = seafile_write(path, &c, 1, size - 1, openfi);
 	if (res == 1)
-		res = sshfs_flush(path, openfi);
+		res = seafile_flush(path, openfi);
 	if (!fi)
-		sshfs_release(path, openfi);
+		seafile_release(path, openfi);
 
 	return res;
 }
@@ -2830,23 +2697,23 @@ static int sshfs_truncate_extend(const char *path, off_t size,
  * If new size is greater than current size, then write a zero byte to
  * the new end of the file.
  */
-static int sshfs_truncate_workaround(const char *path, off_t size,
+static int seafile_truncate_workaround(const char *path, off_t size,
                                      struct fuse_file_info *fi)
 {
 	if (size == 0)
-		return sshfs_truncate_zero(path);
+		return seafile_truncate_zero(path);
 	else {
 		struct stat stbuf;
 		int err;
-		err = sshfs_getattr(path, &stbuf, fi);
+		err = seafile_getattr(path, &stbuf, fi);
 		if (err)
 			return err;
 		if (stbuf.st_size == size)
 			return 0;
 		else if (stbuf.st_size > size)
-			return sshfs_truncate_shrink(path, size);
+			return seafile_truncate_shrink(path, size);
 		else
-			return sshfs_truncate_extend(path, size, fi);
+			return seafile_truncate_extend(path, size, fi);
 	}
 }
 
@@ -2854,44 +2721,44 @@ static int processing_init(void)
 {
 	signal(SIGPIPE, SIG_IGN);
 
-	pthread_mutex_init(&sshfs.lock, NULL);
-	pthread_mutex_init(&sshfs.lock_write, NULL);
-	pthread_cond_init(&sshfs.outstanding_cond, NULL);
-	sshfs.reqtab = g_hash_table_new(NULL, NULL);
-	if (!sshfs.reqtab) {
+	pthread_mutex_init(&seafile.lock, NULL);
+	pthread_mutex_init(&seafile.lock_write, NULL);
+	pthread_cond_init(&seafile.outstanding_cond, NULL);
+	seafile.reqtab = g_hash_table_new(NULL, NULL);
+	if (!seafile.reqtab) {
 		fprintf(stderr, "failed to create hash table\n");
 		return -1;
 	}
 	return 0;
 }
 
-static struct fuse_operations sshfs_oper = {
-		.init       = sshfs_init,
-		.getattr    = sshfs_getattr,
-		.access     = sshfs_access,
-		.opendir    = sshfs_opendir,
-		.readdir    = sshfs_readdir,
-		.releasedir = sshfs_releasedir,
-		.readlink   = sshfs_readlink,
-		.mknod      = sshfs_mknod,
-		.mkdir      = sshfs_mkdir,
-		.symlink    = sshfs_symlink,
-		.unlink     = sshfs_unlink,
-		.rmdir      = sshfs_rmdir,
-		.rename     = sshfs_rename,
-		.link       = sshfs_link,
-		.chmod      = sshfs_chmod,
-		.chown      = sshfs_chown,
-		.truncate   = sshfs_truncate,
-		.utimens    = sshfs_utimens,
-		.open       = sshfs_open,
-		.flush      = sshfs_flush,
-		.fsync      = sshfs_fsync,
-		.release    = sshfs_release,
-		.read       = sshfs_read,
-		.write      = sshfs_write,
-		.statfs     = sshfs_statfs,
-		.create     = sshfs_create,
+static struct fuse_operations seafile_oper = {
+		.init       = seafile_init,
+		.getattr    = seafile_getattr,
+		.access     = seafile_access,
+		.opendir    = seafile_opendir,
+		.readdir    = seafile_readdir,
+		.releasedir = seafile_releasedir,
+		.readlink   = seafile_readlink,
+		.mknod      = seafile_mknod,
+		.mkdir      = seafile_mkdir,
+		.symlink    = seafile_symlink,
+		.unlink     = seafile_unlink,
+		.rmdir      = seafile_rmdir,
+		.rename     = seafile_rename,
+		.link       = seafile_link,
+		.chmod      = seafile_chmod,
+		.chown      = seafile_chown,
+		.truncate   = seafile_truncate,
+		.utimens    = seafile_utimens,
+		.open       = seafile_open,
+		.flush      = seafile_flush,
+		.fsync      = seafile_fsync,
+		.release    = seafile_release,
+		.read       = seafile_read,
+		.write      = seafile_write,
+		.statfs     = seafile_statfs,
+		.create     = seafile_create,
 };
 
 static void usage(const char *progname)
@@ -2910,7 +2777,7 @@ static void usage(const char *progname)
 "    -o opt,[opt...]        mount options\n"
 "    -o reconnect           reconnect to server\n"
 "    -o delay_connect       delay connection to server\n"
-"    -o sshfs_sync          synchronous writes\n"
+"    -o seafile_sync          synchronous writes\n"
 "    -o no_readahead        synchronous reads (no speculative readahead)\n"
 "    -o sync_readdir        synchronous readdir\n"
 "    -d, --debug            print some debugging information (implies -f)\n"
@@ -2976,7 +2843,7 @@ static int is_ssh_opt(const char *arg)
 	return 0;
 }
 
-static int sshfs_opt_proc(void *data, const char *arg, int key,
+static int seafile_opt_proc(void *data, const char *arg, int key,
                           struct fuse_args *outargs)
 {
 	(void) outargs; (void) data;
@@ -2994,11 +2861,11 @@ static int sshfs_opt_proc(void *data, const char *arg, int key,
 		return 1;
 
 	case FUSE_OPT_KEY_NONOPT:
-		if (!sshfs.host && strchr(arg, ':')) {
-			sshfs.host = strdup(arg);
+		if (!seafile.host && strchr(arg, ':')) {
+			seafile.host = strdup(arg);
 			return 0;
 		}
-		else if (!sshfs.mountpoint) {
+		else if (!seafile.mountpoint) {
 #if defined(__CYGWIN__)
 			/*
 			 * On FUSE for Cygwin the mountpoint may be a drive or directory.
@@ -3008,7 +2875,7 @@ static int sshfs_opt_proc(void *data, const char *arg, int key,
 			if ((('A' <= arg[0] && arg[0] <= 'Z') || ('a' <= arg[0] && arg[0] <= 'z'))
 				&& ':' == arg[1] && '\0' == arg[2]) {
 				/* drive: make a copy */
-				sshfs.mountpoint = strdup(arg);
+				seafile.mountpoint = strdup(arg);
 			} else {
 				/* path: split into dirname, basename and check dirname */
 				char *dir;
@@ -3025,7 +2892,7 @@ static int sshfs_opt_proc(void *data, const char *arg, int key,
 				}
 				if (dir) {
 					slash = '/' == dir[0] && '\0' == dir[1] ? "" : "/";
-					asprintf(&sshfs.mountpoint, "%s%s%s", dir, slash, base);
+					asprintf(&seafile.mountpoint, "%s%s%s", dir, slash, base);
 					free(dir);
 				}
 			}
@@ -3039,19 +2906,19 @@ static int sshfs_opt_proc(void *data, const char *arg, int key,
                                  * mountpoint to later be completely
                                  * unprivileged with libfuse >= 3.3.0.
                                  */
-                                sshfs.mountpoint = arg;
+                                seafile.mountpoint = arg;
                         } else {
-                                sshfs.mountpoint = realpath(arg, NULL);
+                                seafile.mountpoint = realpath(arg, NULL);
                         }
 #endif
-			if (!sshfs.mountpoint) {
-				fprintf(stderr, "sshfs: bad mount point `%s': %s\n",
+			if (!seafile.mountpoint) {
+				fprintf(stderr, "seafile: bad mount point `%s': %s\n",
 					arg, strerror(errno));
 				return -1;
 			}
 			return 0;
 		}
-		fprintf(stderr, "sshfs: invalid argument `%s'\n", arg);
+		fprintf(stderr, "seafile: invalid argument `%s'\n", arg);
 		return -1;
 
 
@@ -3092,16 +2959,16 @@ static int parse_workarounds(void)
            char */
         char argv0[] = "";
         char argv1[] = "-o";
-	char *argv[] = { argv0, argv1, sshfs.workarounds, NULL };
+	char *argv[] = { argv0, argv1, seafile.workarounds, NULL };
 	struct fuse_args args = FUSE_ARGS_INIT(3, argv);
-	char *s = sshfs.workarounds;
+	char *s = seafile.workarounds;
 	if (!s)
 		return 0;
 
 	while ((s = strchr(s, ':')))
 		*s = ',';
 
-	res = fuse_opt_parse(&args, &sshfs, workaround_opts,
+	res = fuse_opt_parse(&args, &seafile, workaround_opts,
 			     workaround_opt_proc);
 	fuse_opt_free_args(&args);
 
@@ -3114,17 +2981,17 @@ static int read_password(void)
 	int max_password = MIN(MAX_PASSWORD, size - 1);
 	int n;
 
-	sshfs.password = mmap(NULL, size, PROT_READ | PROT_WRITE,
+	seafile.password = mmap(NULL, size, PROT_READ | PROT_WRITE,
 			      MAP_PRIVATE | MAP_ANONYMOUS | MAP_LOCKED,
 			      -1, 0);
-	if (sshfs.password == MAP_FAILED) {
+	if (seafile.password == MAP_FAILED) {
 		perror("Failed to allocate locked page for password");
 		return -1;
 	}
-	if (mlock(sshfs.password, size) != 0) {
-		memset(sshfs.password, 0, size);
-		munmap(sshfs.password, size);
-		sshfs.password = NULL;
+	if (mlock(seafile.password, size) != 0) {
+		memset(seafile.password, 0, size);
+		munmap(seafile.password, size);
+		seafile.password = NULL;
 		perror("Failed to allocate locked page for password");
 		return -1;
 	}
@@ -3133,23 +3000,23 @@ static int read_password(void)
 	for (n = 0; n < max_password; n++) {
 		int res;
 
-		res = read(0, &sshfs.password[n], 1);
+		res = read(0, &seafile.password[n], 1);
 		if (res == -1) {
 			perror("Reading password");
 			return -1;
 		}
 		if (res == 0) {
-			sshfs.password[n] = '\n';
+			seafile.password[n] = '\n';
 			break;
 		}
-		if (sshfs.password[n] == '\n')
+		if (seafile.password[n] == '\n')
 			break;
 	}
 	if (n == max_password) {
 		fprintf(stderr, "Password too long\n");
 		return -1;
 	}
-	sshfs.password[n+1] = '\0';
+	seafile.password[n+1] = '\0';
 	ssh_add_arg("-oNumberOfPasswordPrompts=1");
 
 	return 0;
@@ -3198,12 +3065,12 @@ static void set_ssh_command(void)
 	char *token = NULL;
 	int i = 0;
 
-	token = tokenize_on_space(sshfs.ssh_command);
+	token = tokenize_on_space(seafile.ssh_command);
 	while (token != NULL) {
 		if (i == 0) {
-			replace_arg(&sshfs.ssh_args.argv[0], token);
+			replace_arg(&seafile.ssh_args.argv[0], token);
 		} else {
-			if (fuse_opt_insert_arg(&sshfs.ssh_args, i, token) == -1)
+			if (fuse_opt_insert_arg(&seafile.ssh_args, i, token) == -1)
 				_exit(1);
 		}
 		i++;
@@ -3214,7 +3081,7 @@ static void set_ssh_command(void)
 
 static char *find_base_path(void)
 {
-	char *s = sshfs.host;
+	char *s = seafile.host;
 	char *d = s;
 
 	for (; *s && *s != ':'; s++) {
@@ -3267,12 +3134,12 @@ static int ssh_connect(void)
 	if (res == -1)
 		return -1;
 
-	if (!sshfs.delay_connect) {
+	if (!seafile.delay_connect) {
 		if (connect_remote() == -1)
 			return -1;
 
-		if (!sshfs.no_check_root &&
-		    sftp_check_root(sshfs.base_path) != 0)
+		if (!seafile.no_check_root &&
+		    sftp_check_root(seafile.base_path) != 0)
 			return -1;
 
 	}
@@ -3413,7 +3280,7 @@ static uint32_t *username_to_uid(char *name)
 	}
 	uint32_t *r = malloc(sizeof(uint32_t));
 	if (r == NULL) {
-		fprintf(stderr, "sshfs: memory allocation failed\n");
+		fprintf(stderr, "seafile: memory allocation failed\n");
 		abort();
 	}
 	*r = pw->pw_uid;
@@ -3437,7 +3304,7 @@ static uint32_t *groupname_to_gid(char *name)
 	}
 	uint32_t *r = malloc(sizeof(uint32_t));
 	if (r == NULL) {
-		fprintf(stderr, "sshfs: memory allocation failed\n");
+		fprintf(stderr, "seafile: memory allocation failed\n");
 		abort();
 	}
 	*r = gr->gr_gid;
@@ -3446,12 +3313,12 @@ static uint32_t *groupname_to_gid(char *name)
 
 static inline void load_uid_map(void)
 {
-	read_id_map(sshfs.uid_file, &username_to_uid, "uid", &sshfs.uid_map, &sshfs.r_uid_map);
+	read_id_map(seafile.uid_file, &username_to_uid, "uid", &seafile.uid_map, &seafile.r_uid_map);
 }
 
 static inline void load_gid_map(void)
 {
-	read_id_map(sshfs.gid_file, &groupname_to_gid, "gid", &sshfs.gid_map, &sshfs.r_gid_map);
+	read_id_map(seafile.gid_file, &groupname_to_gid, "gid", &seafile.gid_map, &seafile.r_gid_map);
 }
 
 #ifdef __APPLE__
@@ -3469,63 +3336,63 @@ int main(int argc, char *argv[])
 	struct fuse_session *se;
 
 #ifdef __APPLE__
-	if (!realpath(*exec_path, sshfs_program_path)) {
-		memset(sshfs_program_path, 0, PATH_MAX);
+	if (!realpath(*exec_path, seafile_program_path)) {
+		memset(seafile_program_path, 0, PATH_MAX);
 	}
 #endif /* __APPLE__ */
 
 #ifdef __APPLE__
-	sshfs.blksize = 0;
+	seafile.blksize = 0;
 #else
-	sshfs.blksize = 4096;
+	seafile.blksize = 4096;
 #endif
 	/* SFTP spec says all servers should allow at least 32k I/O */
-	sshfs.max_read = 32768;
-	sshfs.max_write = 32768;
+	seafile.max_read = 32768;
+	seafile.max_write = 32768;
 #ifdef __APPLE__
-	sshfs.rename_workaround = 1;
+	seafile.rename_workaround = 1;
 #else
-	sshfs.rename_workaround = 0;
+	seafile.rename_workaround = 0;
 #endif
-	sshfs.renamexdev_workaround = 0;
-	sshfs.truncate_workaround = 0;
-	sshfs.buflimit_workaround = 1;
-	sshfs.createmode_workaround = 0;
-	sshfs.ssh_ver = 2;
-	sshfs.progname = argv[0];
-	sshfs.rfd = -1;
-	sshfs.wfd = -1;
-	sshfs.ptyfd = -1;
-	sshfs.dir_cache = 1;
-	sshfs.show_help = 0;
-	sshfs.show_version = 0;
-	sshfs.singlethread = 0;
-	sshfs.foreground = 0;
-	sshfs.ptyslavefd = -1;
-	sshfs.delay_connect = 0;
-	sshfs.slave = 0;
-	sshfs.detect_uid = 0;
+	seafile.renamexdev_workaround = 0;
+	seafile.truncate_workaround = 0;
+	seafile.buflimit_workaround = 1;
+	seafile.createmode_workaround = 0;
+	seafile.ssh_ver = 2;
+	seafile.progname = argv[0];
+	seafile.rfd = -1;
+	seafile.wfd = -1;
+	seafile.ptyfd = -1;
+	seafile.dir_cache = 1;
+	seafile.show_help = 0;
+	seafile.show_version = 0;
+	seafile.singlethread = 0;
+	seafile.foreground = 0;
+	seafile.ptyslavefd = -1;
+	seafile.delay_connect = 0;
+	seafile.slave = 0;
+	seafile.detect_uid = 0;
 	if (strcmp(IDMAP_DEFAULT, "none") == 0) {
-		sshfs.idmap = IDMAP_NONE;
+		seafile.idmap = IDMAP_NONE;
 	} else if (strcmp(IDMAP_DEFAULT, "user") == 0) {
-		sshfs.idmap = IDMAP_USER;
+		seafile.idmap = IDMAP_USER;
 	} else {
-		fprintf(stderr, "bad idmap default value built into sshfs; "
+		fprintf(stderr, "bad idmap default value built into seafile; "
 		    "assuming none (bad logic in configure script?)\n");
-		sshfs.idmap = IDMAP_NONE;
+		seafile.idmap = IDMAP_NONE;
 	}
-	sshfs.nomap = NOMAP_ERROR;
+	seafile.nomap = NOMAP_ERROR;
 	ssh_add_arg("ssh");
 	ssh_add_arg("-x");
 	ssh_add_arg("-a");
 	ssh_add_arg("-oClearAllForwardings=yes");
 
-	if (fuse_opt_parse(&args, &sshfs, sshfs_opts, sshfs_opt_proc) == -1 ||
+	if (fuse_opt_parse(&args, &seafile, seafile_opts, seafile_opt_proc) == -1 ||
 	    parse_workarounds() == -1)
 		exit(1);
 
-	if (sshfs.show_version) {
-		printf("SSHFS version %s\n", PACKAGE_VERSION);
+	if (seafile.show_version) {
+		printf("seafile version %s\n", PACKAGE_VERSION);
 		printf("FUSE library version %s\n", fuse_pkgversion());
 #if !defined(__CYGWIN__)
 		fuse_lowlevel_version();
@@ -3533,113 +3400,113 @@ int main(int argc, char *argv[])
 		exit(0);
 	}
 
-	if (sshfs.show_help) {
+	if (seafile.show_help) {
 		usage(args.argv[0]);
 		fuse_lib_help(&args);
 		exit(0);
-	} else if (!sshfs.host) {
+	} else if (!seafile.host) {
 		fprintf(stderr, "missing host\n");
 		fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
 		exit(1);
-	} else if (!sshfs.mountpoint) {
+	} else if (!seafile.mountpoint) {
 		fprintf(stderr, "error: no mountpoint specified\n");
 		fprintf(stderr, "see `%s -h' for usage\n", argv[0]);
 		exit(1);
 	}
 
-	if (sshfs.idmap == IDMAP_USER)
-		sshfs.detect_uid = 1;
-	else if (sshfs.idmap == IDMAP_FILE) {
-		sshfs.uid_map = NULL;
-		sshfs.gid_map = NULL;
-		sshfs.r_uid_map = NULL;
-		sshfs.r_gid_map = NULL;
-		if (!sshfs.uid_file && !sshfs.gid_file) {
+	if (seafile.idmap == IDMAP_USER)
+		seafile.detect_uid = 1;
+	else if (seafile.idmap == IDMAP_FILE) {
+		seafile.uid_map = NULL;
+		seafile.gid_map = NULL;
+		seafile.r_uid_map = NULL;
+		seafile.r_gid_map = NULL;
+		if (!seafile.uid_file && !seafile.gid_file) {
 			fprintf(stderr, "need a uidfile or gidfile with idmap=file\n");
 			exit(1);
 		}
-		if (sshfs.uid_file)
+		if (seafile.uid_file)
 			load_uid_map();
-		if (sshfs.gid_file)
+		if (seafile.gid_file)
 			load_gid_map();
 	}
-	free(sshfs.uid_file);
-	free(sshfs.gid_file);
+	free(seafile.uid_file);
+	free(seafile.gid_file);
 
-	DEBUG("SSHFS version %s\n", PACKAGE_VERSION);
+	DEBUG("seafile version %s\n", PACKAGE_VERSION);
 
-	/* Force sshfs to the foreground when using stdin+stdout */
-	if (sshfs.slave)
-		sshfs.foreground = 1;
+	/* Force seafile to the foreground when using stdin+stdout */
+	if (seafile.slave)
+		seafile.foreground = 1;
 
 
-	if (sshfs.slave && sshfs.password_stdin) {
+	if (seafile.slave && seafile.password_stdin) {
 		fprintf(stderr, "the password_stdin and slave options cannot both be specified\n");
 		exit(1);
 	}
 
-	if (sshfs.password_stdin) {
+	if (seafile.password_stdin) {
 		res = read_password();
 		if (res == -1)
 			exit(1);
 	}
 
-	if (sshfs.debug)
-		sshfs.foreground = 1;
+	if (seafile.debug)
+		seafile.foreground = 1;
 	
-	if (sshfs.buflimit_workaround)
+	if (seafile.buflimit_workaround)
 		/* Work around buggy sftp-server in OpenSSH.  Without this on
 		   a slow server a 10Mbyte buffer would fill up and the server
 		   would abort */
-		sshfs.max_outstanding_len = 8388608;
+		seafile.max_outstanding_len = 8388608;
 	else
-		sshfs.max_outstanding_len = ~0;
+		seafile.max_outstanding_len = ~0;
 
-	fsname = g_strdup(sshfs.host);
-	sshfs.base_path = g_strdup(find_base_path());
+	fsname = g_strdup(seafile.host);
+	seafile.base_path = g_strdup(find_base_path());
 
-	if (sshfs.ssh_command)
+	if (seafile.ssh_command)
 		set_ssh_command();
 
-	tmp = g_strdup_printf("-%i", sshfs.ssh_ver);
+	tmp = g_strdup_printf("-%i", seafile.ssh_ver);
 	ssh_add_arg(tmp);
 	g_free(tmp);
-	ssh_add_arg(sshfs.host);
-	if (sshfs.sftp_server)
-		sftp_server = sshfs.sftp_server;
-	else if (sshfs.ssh_ver == 1)
+	ssh_add_arg(seafile.host);
+	if (seafile.sftp_server)
+		sftp_server = seafile.sftp_server;
+	else if (seafile.ssh_ver == 1)
 		sftp_server = SFTP_SERVER_PATH;
 	else
 		sftp_server = "sftp";
 
-	if (sshfs.ssh_ver != 1 && strchr(sftp_server, '/') == NULL)
+	if (seafile.ssh_ver != 1 && strchr(sftp_server, '/') == NULL)
 		ssh_add_arg("-s");
 
 	ssh_add_arg(sftp_server);
-	free(sshfs.sftp_server);
+	free(seafile.sftp_server);
 
 	res = cache_parse_options(&args);
 	if (res == -1)
 		exit(1);
 
-	sshfs.randseed = time(0);
+	seafile.randseed = time(0);
 
-	if (sshfs.max_read > 65536)
-		sshfs.max_read = 65536;
-	if (sshfs.max_write > 65536)
-		sshfs.max_write = 65536;
+	if (seafile.max_read > 65536)
+		seafile.max_read = 65536;
+	if (seafile.max_write > 65536)
+		seafile.max_write = 65536;
 
         fsname = fsname_escape_commas(fsname);
-	tmp = g_strdup_printf("-osubtype=sshfs,fsname=%s", fsname);
+	tmp = g_strdup_printf("-osubtype=seafile,fsname=%s", fsname);
 	fuse_opt_insert_arg(&args, 1, tmp);
 	g_free(tmp);
 	g_free(fsname);
 
-	if(sshfs.dir_cache)
-		sshfs.op = cache_wrap(&sshfs_oper);
+	if(seafile.dir_cache)
+		seafile.op = cache_wrap(&seafile_oper);
 	else
-		sshfs.op = &sshfs_oper;
-	fuse = fuse_new(&args, sshfs.op,
+		seafile.op = &seafile_oper;
+	fuse = fuse_new(&args, seafile.op,
 			sizeof(struct fuse_operations), NULL);
 	if(fuse == NULL)
 		exit(1);
@@ -3650,7 +3517,7 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	res = fuse_mount(fuse, sshfs.mountpoint);
+	res = fuse_mount(fuse, seafile.mountpoint);
 	if (res != 0) {
 		fuse_destroy(fuse);
 		exit(1);
@@ -3673,14 +3540,14 @@ int main(int argc, char *argv[])
 		exit(1);
 	}
 
-	res = fuse_daemonize(sshfs.foreground);
+	res = fuse_daemonize(seafile.foreground);
 	if (res == -1) {
 		fuse_unmount(fuse);
 		fuse_destroy(fuse);
 		exit(1);
 	}
 
-	if (sshfs.singlethread)
+	if (seafile.singlethread)
 		res = fuse_loop(fuse);
 	else
 		res = fuse_loop_mt(fuse, 0);
@@ -3694,28 +3561,28 @@ int main(int argc, char *argv[])
 	fuse_unmount(fuse);
 	fuse_destroy(fuse);
 
-	if (sshfs.debug) {
+	if (seafile.debug) {
 		unsigned int avg_rtt = 0;
 
-		if (sshfs.num_sent)
-			avg_rtt = sshfs.total_rtt / sshfs.num_sent;
+		if (seafile.num_sent)
+			avg_rtt = seafile.total_rtt / seafile.num_sent;
 
 		DEBUG("\n"
 		      "sent:               %llu messages, %llu bytes\n"
 		      "received:           %llu messages, %llu bytes\n"
 		      "rtt min/max/avg:    %ums/%ums/%ums\n"
 		      "num connect:        %u\n",
-		      (unsigned long long) sshfs.num_sent,
-		      (unsigned long long) sshfs.bytes_sent,
-		      (unsigned long long) sshfs.num_received,
-		      (unsigned long long) sshfs.bytes_received,
-		      sshfs.min_rtt, sshfs.max_rtt, avg_rtt,
-		      sshfs.num_connect);
+		      (unsigned long long) seafile.num_sent,
+		      (unsigned long long) seafile.bytes_sent,
+		      (unsigned long long) seafile.num_received,
+		      (unsigned long long) seafile.bytes_received,
+		      seafile.min_rtt, seafile.max_rtt, avg_rtt,
+		      seafile.num_connect);
 	}
 
 	fuse_opt_free_args(&args);
-	fuse_opt_free_args(&sshfs.ssh_args);
-	free(sshfs.directport);
+	fuse_opt_free_args(&seafile.ssh_args);
+	free(seafile.directport);
 
 	return res;
 }
